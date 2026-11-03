@@ -1,0 +1,242 @@
+.claimSection {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.claimNotice {
+  background-color: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.claimNotice strong {
+  font-size: 16px;
+  color: var(--dark-green);
+}
+
+.claimNotice p {
+  font-size: 13px;
+  color: var(--text-sub);
+}
+
+.nameList {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.nameButton {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 15px 16px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--mint);
+  background-color: var(--surface);
+  color: var(--dark-green);
+  font-size: 16px;
+  font-weight: 700;
+  box-shadow: var(--shadow-sm);
+}
+
+.nameButtonDisabled {
+  border-color: var(--border);
+  background-color: var(--surface-subtle);
+  color: var(--text-muted);
+  box-shadow: none;
+}
+
+.personName {
+  font-size: 16px;
+}
+
+.stateLabel {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.myShareCard {
+  background-color: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  box-shadow: var(--shadow-sm);
+}
+
+.myShareTop {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.myShareLabel {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--mint);
+}
+
+.switchNameBtn {
+  border: 1px solid var(--border);
+  background-color: var(--surface-subtle);
+  color: var(--text-sub);
+  border-radius: 6px;
+  padding: 4px 8px;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.myAmount {
+  font-size: 32px;
+  font-weight: 800;
+  color: var(--dark-green);
+  letter-spacing: -0.5px;
+}
+
+.reasonText {
+  font-size: 13px;
+  color: var(--text-sub);
+}
+
+.accountBox {
+  margin-top: 6px;
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  background-color: var(--surface-subtle);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 13px;
+}
+
+.accountBox span {
+  font-size: 11px;
+  color: var(--text-sub);
+}
+
+.reportedNotice {
+  padding: 14px;
+  border-radius: var(--radius-md);
+  background-color: var(--status-reported-bg);
+  border: 1px solid var(--status-reported-border);
+  color: var(--status-reported-text);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  font-size: 13px;
+}
+
+.reportedNotice p {
+  margin-top: 2px;
+  font-size: 12px;
+}
+
+.undoBtn {
+  align-self: flex-start;
+  padding: 6px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--status-reported-border);
+  background-color: var(--surface);
+  color: var(--status-reported-text);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.breakdownSection {
+  background-color: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+
+.accordionToggle {
+  width: 100%;
+  padding: 14px 16px;
+  border: none;
+  background-color: var(--surface);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--dark-green);
+}
+
+.breakdownList {
+  border-top: 1px solid var(--border);
+  padding: 12px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.breakdownRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-bottom: 8px;
+  border-bottom: 1px dashed var(--border);
+}
+
+.breakdownRow:last-child {
+  border-bottom: none;
+  padding-bottom: 0;
+}
+
+.roundTag {
+  font-size: 11px;
+  color: var(--text-sub);
+}
+
+.menuTitle {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--dark-green);
+}
+
+.sharePrice {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--dark-green);
+}
+
+.bottomActions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.paySheetBtn {
+  padding: 15px 14px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--dark-green);
+  background-color: var(--surface);
+  color: var(--dark-green);
+  font-size: 15px;
+  font-weight: 800;
+}
+
+.reportedCta {
+  padding: 15px 14px;
+  border-radius: var(--radius-md);
+  border: none;
+  background-color: var(--mint);
+  color: #ffffff;
+  font-size: 15px;
+  font-weight: 800;
+}
+
+.reportedCta:disabled {
+  background-color: var(--status-reported-bg);
+  color: var(--status-reported-text);
+  border: 1px solid var(--status-reported-border);
+}
+

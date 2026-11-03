@@ -1,0 +1,127 @@
+.backdrop {
+  position: fixed;
+  inset: 0;
+  background-color: rgba(24, 55, 43, 0.48);
+  z-index: 50;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+}
+
+.sheet {
+  width: 100%;
+  max-width: 480px;
+  background-color: var(--surface);
+  border-radius: 22px 22px 0 0;
+  padding: 12px 20px calc(20px + env(safe-area-inset-bottom, 0px));
+  box-shadow: var(--shadow-md);
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.handle {
+  width: 42px;
+  height: 5px;
+  border-radius: 999px;
+  background-color: var(--border);
+  margin: 0 auto 4px;
+}
+
+.sheetHeader {
+  text-align: center;
+  padding: 8px 0;
+  background-color: var(--surface-subtle);
+  border-radius: var(--radius-md);
+}
+
+.sheetLabel {
+  font-size: 13px;
+  color: var(--text-sub);
+  display: block;
+}
+
+.amountText {
+  display: block;
+  font-size: 28px;
+  font-weight: 800;
+  color: var(--dark-green);
+  margin: 4px 0;
+}
+
+.accountInfo {
+  font-size: 13px;
+  color: var(--text-sub);
+}
+
+.buttonGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.CopyButton {
+  width: 100%;
+  padding: 13px 16px;
+  border-radius: var(--radius-md);
+  border: none;
+  background-color: var(--mint);
+  color: #ffffff;
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.appButtonRow {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.appButton {
+  padding: 12px 10px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border);
+  background-color: var(--surface);
+  color: var(--dark-green);
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.fallbackNotice {
+  text-align: center;
+  font-size: 12px;
+  color: var(--text-sub);
+}
+
+.returnPrompt {
+  padding: 12px;
+  border-radius: var(--radius-md);
+  background-color: var(--mint-soft);
+  border: 1px solid var(--mint);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--dark-green);
+}
+
+.reportedBtn {
+  padding: 10px;
+  border-radius: var(--radius-sm);
+  border: none;
+  background-color: var(--dark-green);
+  color: #ffffff;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.closeBtn {
+  padding: 11px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border);
+  background-color: var(--surface-subtle);
+  color: var(--text-sub);
+  font-size: 14px;
+  font-weight: 600;
+}
+

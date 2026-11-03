@@ -1,0 +1,165 @@
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.sectionHeader {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+}
+
+.sectionHeader h2 {
+  font-size: 16px;
+  font-weight: 800;
+  color: var(--dark-green);
+}
+
+.sectionHeader span {
+  font-size: 12px;
+  color: var(--text-sub);
+}
+
+.roundTabs {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+}
+
+.roundTab {
+  padding: 9px 14px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background-color: var(--surface);
+  color: var(--text-sub);
+  font-size: 13px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.roundTabActive {
+  background-color: var(--dark-green);
+  border-color: var(--dark-green);
+  color: #ffffff;
+}
+
+.absenceBox {
+  padding: 12px 14px;
+  border-radius: var(--radius-md);
+  background-color: var(--surface-subtle);
+  border: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.boxTitle {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--dark-green);
+}
+
+.absenceChipRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.absenceChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background-color: var(--surface);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--dark-green);
+}
+
+.absenceActive {
+  background-color: var(--status-unpaid-bg);
+  border-color: var(--status-unpaid-border);
+  color: var(--status-unpaid-text);
+}
+
+.menuList {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.summarySection {
+  background-color: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  box-shadow: var(--shadow-sm);
+}
+
+.summaryList {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.summaryRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  background-color: var(--surface-subtle);
+}
+
+.personInfo {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+}
+
+.hostTag {
+  font-size: 11px;
+  font-weight: 700;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background-color: var(--status-confirmed-bg);
+  color: var(--status-confirmed-text);
+}
+
+.personAmount {
+  font-size: 15px;
+  font-weight: 800;
+  color: var(--dark-green);
+}
+
+.totalCheckRow {
+  display: flex;
+  justify-content: space-between;
+  padding-top: 8px;
+  border-top: 1px dashed var(--border);
+  font-size: 14px;
+  color: var(--mint);
+}
+
+.primaryCta {
+  width: 100%;
+  padding: 15px 18px;
+  border-radius: var(--radius-md);
+  border: none;
+  background-color: var(--mint);
+  color: #ffffff;
+  font-size: 16px;
+  font-weight: 800;
+}
+
+.primaryCta:disabled {
+  opacity: 0.45;
+}
+
