@@ -1,0 +1,86 @@
+.form {
+  background-color: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  box-shadow: var(--shadow-sm);
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.label {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--dark-green);
+}
+
+.input,
+.select {
+  padding: 11px 12px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background-color: var(--bg);
+  font-size: 14px;
+  color: var(--dark-green);
+}
+
+.input:focus,
+.select:focus {
+  outline: 2px solid var(--mint);
+  border-color: transparent;
+}
+
+.notice {
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  background-color: var(--status-confirmed-bg);
+  color: var(--status-confirmed-text);
+  border: 1px solid var(--status-confirmed-border);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.clearBox {
+  padding: 14px;
+  border-radius: var(--radius-md);
+  background-color: var(--surface-subtle);
+  border: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.clearDesc {
+  font-size: 12px;
+  color: var(--text-sub);
+}
+
+.clearBtn {
+  align-self: flex-start;
+  padding: 8px 14px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--status-unpaid-border);
+  background-color: var(--status-unpaid-bg);
+  color: var(--status-unpaid-text);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.saveCta {
+  width: 100%;
+  padding: 15px 18px;
+  border-radius: var(--radius-md);
+  border: none;
+  background-color: var(--mint);
+  color: #ffffff;
+  font-size: 16px;
+  font-weight: 800;
+}
+
