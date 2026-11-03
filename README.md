@@ -11,6 +11,10 @@
 ## 기술 스택
 React (Vite) · Spring Boot · MyBatis · MySQL · Gemini API
 
+## AI 활용
+- 기획, DB 설계, 정산 규칙, 보안 설계는 직접 정했습니다.
+- 구현은 AI 코딩 도구로 가속했고, 핵심 로직(정산 계산, 토큰 검증, 이름 점유)은 직접 읽고 테스트로 검증했습니다.
+
 ## 폴더 구조
 - frontend/ : React 웹앱
 - backend/ : Spring Boot API
