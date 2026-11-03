@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.snapnbbang.mapper.SettlementMapper">
+
+    <insert id="insert" parameterType="com.snapnbbang.domain.Settlement">
+        INSERT INTO settlement (
+            id,
+            title,
+            settled_on,
+            status,
+            admin_token_hash,
+            bank,
+            account_number,
+            account_holder,
+            pay_link,
+            shared_at,
+            account_purge_at,
+            expires_at
+        ) VALUES (
+            #{id},
+            #{title},
+            #{settledOn},
+            COALESCE(#{status}, 'SHARED'),
+            #{adminTokenHash},
+            #{bank},
+            #{accountNumber},
+            #{accountHolder},
+            #{payLink},
+            #{sharedAt},
+            #{accountPurgeAt},
+            #{expiresAt}
+        )
+    </insert>
+
+    <select id="selectById" resultType="com.snapnbbang.domain.Settlement">
+        SELECT
+            id,
+            title,
+            settled_on,
+            status,
+            admin_token_hash,
+            bank,
+            account_number,
+            account_holder,
+            pay_link,
+            created_at,
+            shared_at,
+            account_purge_at,
+            expires_at
+        FROM settlement
+        WHERE id = #{id}
+    </select>
+
+</mapper>
+
