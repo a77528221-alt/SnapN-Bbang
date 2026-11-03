@@ -1,0 +1,207 @@
+.profileSummary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 14px;
+  border-radius: var(--radius-md);
+  background-color: var(--surface);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-sm);
+}
+
+.summaryLabel {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--mint);
+  display: block;
+}
+
+.summaryValue {
+  font-size: 14px;
+  color: var(--dark-green);
+  margin-top: 2px;
+}
+
+.editLink {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--mint);
+  padding: 6px 10px;
+  border-radius: var(--radius-sm);
+  background-color: var(--mint-soft);
+}
+
+.captureSection {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.sectionHeader {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+}
+
+.sectionHeader h2 {
+  font-size: 16px;
+  font-weight: 800;
+  color: var(--dark-green);
+}
+
+.sectionHeader span {
+  font-size: 12px;
+  color: var(--text-sub);
+}
+
+.hiddenInput {
+  display: none;
+}
+
+.cameraButton {
+  width: 100%;
+  padding: 18px 16px;
+  border-radius: var(--radius-lg);
+  border: none;
+  background-color: var(--mint);
+  color: #ffffff;
+  font-size: 17px;
+  font-weight: 800;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  box-shadow: var(--shadow-sm);
+}
+
+.cameraButton:active {
+  background-color: var(--mint-hover);
+}
+
+.cameraIcon {
+  font-size: 22px;
+}
+
+.albumButton {
+  width: 100%;
+  padding: 12px 16px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border);
+  background-color: var(--surface);
+  color: var(--dark-green);
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.roundsSection {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.horizontalScroll {
+  display: flex;
+  gap: 12px;
+  overflow-x: auto;
+  padding-bottom: 6px;
+  scroll-snap-type: x mandatory;
+}
+
+.horizontalScroll > * {
+  scroll-snap-align: start;
+}
+
+.emptyBox {
+  padding: 24px 16px;
+  border-radius: var(--radius-md);
+  border: 1px dashed var(--border);
+  background-color: var(--surface-subtle);
+  text-align: center;
+  font-size: 13px;
+  color: var(--text-sub);
+}
+
+.recentSection {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.recentList {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.recentCard {
+  background-color: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.recentTop {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 15px;
+  color: var(--dark-green);
+}
+
+.recentDate {
+  font-size: 12px;
+  color: var(--text-sub);
+}
+
+.recentMeta {
+  display: flex;
+  justify-content: space-between;
+  font-size: 13px;
+  color: var(--text-sub);
+}
+
+.recentLinks {
+  display: flex;
+  gap: 8px;
+  padding-top: 6px;
+  border-top: 1px solid var(--surface-subtle);
+}
+
+.manageLink,
+.participantLink {
+  flex: 1;
+  text-align: center;
+  padding: 7px 10px;
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.manageLink {
+  background-color: var(--mint-soft);
+  color: var(--dark-green);
+}
+
+.participantLink {
+  background-color: var(--surface-subtle);
+  color: var(--text-sub);
+}
+
+.primaryCta {
+  width: 100%;
+  padding: 15px 18px;
+  border-radius: var(--radius-md);
+  border: none;
+  background-color: var(--dark-green);
+  color: #ffffff;
+  font-size: 16px;
+  font-weight: 800;
+}
+
+.primaryCta:disabled {
+  opacity: 0.5;
+}
+

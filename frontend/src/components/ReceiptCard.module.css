@@ -1,0 +1,143 @@
+.card {
+  min-width: 256px;
+  max-width: 272px;
+  flex: 0 0 auto;
+  background-color: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 14px;
+  box-shadow: var(--shadow-sm);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.cardHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.roundBadge {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 9px;
+  border-radius: 999px;
+  background-color: var(--dark-green);
+  color: #ffffff;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.statusBadge {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 9px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.confirmed {
+  background-color: var(--status-confirmed-bg);
+  color: var(--status-confirmed-text);
+  border: 1px solid var(--status-confirmed-border);
+}
+
+.reported {
+  background-color: var(--status-reported-bg);
+  color: var(--status-reported-text);
+  border: 1px solid var(--status-reported-border);
+}
+
+.unpaid {
+  background-color: var(--status-unpaid-bg);
+  color: var(--status-unpaid-text);
+  border: 1px solid var(--status-unpaid-border);
+}
+
+.placeName {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--dark-green);
+}
+
+.statusDesc {
+  font-size: 12px;
+  color: var(--text-sub);
+  line-height: 1.4;
+}
+
+.itemList {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 8px 10px;
+  background-color: var(--surface-subtle);
+  border-radius: var(--radius-sm);
+}
+
+.itemRow {
+  display: flex;
+  justify-content: space-between;
+  font-size: 13px;
+  color: var(--text-main);
+}
+
+.itemName {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 140px;
+}
+
+.itemPrice {
+  font-weight: 600;
+}
+
+.totalRow {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding-top: 6px;
+  border-top: 1px dashed var(--border);
+  font-size: 14px;
+  color: var(--dark-green);
+}
+
+.cardFooter {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: auto;
+  padding-top: 6px;
+  gap: 8px;
+}
+
+.statusSwitchLabel {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--text-sub);
+}
+
+.statusSelect {
+  padding: 2px 6px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background-color: var(--surface);
+  font-size: 11px;
+}
+
+.deleteBtn {
+  padding: 4px 8px;
+  border-radius: 6px;
+  border: 1px solid var(--status-unpaid-border);
+  background-color: var(--status-unpaid-bg);
+  color: var(--status-unpaid-text);
+  font-size: 12px;
+  font-weight: 600;
+}
+
