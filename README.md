@@ -35,7 +35,7 @@ React (Vite) · Spring Boot · MyBatis · MySQL · Gemini API
 
 ## 진행 상황
 - [x] 프로젝트 세팅, 백엔드 뼈대
-- [ ] 프론트 뼈대
+- [x] 프론트 뼈대
 - [ ] 영수증 파싱, 정산 계산, 정산 API
 - [ ] 화면 연결, PWA, 보안 마감
 
