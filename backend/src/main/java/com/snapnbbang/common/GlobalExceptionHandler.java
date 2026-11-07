@@ -13,6 +13,8 @@ import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.web.multipart.MaxUploadSizeExceededException;
+import org.springframework.web.multipart.MultipartException;
+import org.springframework.web.multipart.support.MissingServletRequestPartException;
 import org.springframework.web.servlet.NoHandlerFoundException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
 
@@ -41,14 +43,30 @@ public class GlobalExceptionHandler {
             ConstraintViolationException.class,
             HttpMessageNotReadableException.class,
             MissingServletRequestParameterException.class,
+            MissingServletRequestPartException.class,
             MethodArgumentTypeMismatchException.class,
             MaxUploadSizeExceededException.class,
+            MultipartException.class,
             IllegalArgumentException.class
     })
     public ResponseEntity<ErrorResponse> handleBadRequest(Exception ex) {
         return ResponseEntity
                 .status(HttpStatus.BAD_REQUEST)
                 .body(new ErrorResponse(BAD_REQUEST_MESSAGE));
+    }
+
+    @ExceptionHandler(RateLimitExceededException.class)
+    public ResponseEntity<ErrorResponse> handleRateLimitExceeded(RateLimitExceededException ex) {
+        return ResponseEntity
+                .status(HttpStatus.TOO_MANY_REQUESTS)
+                .body(new ErrorResponse(RateLimitExceededException.DEFAULT_MESSAGE));
+    }
+
+    @ExceptionHandler(ReceiptParseException.class)
+    public ResponseEntity<ErrorResponse> handleReceiptParseException(ReceiptParseException ex) {
+        return ResponseEntity
+                .status(HttpStatus.BAD_GATEWAY)
+                .body(new ErrorResponse(ReceiptParseException.DEFAULT_MESSAGE));
     }
 
     @ExceptionHandler(Exception.class)

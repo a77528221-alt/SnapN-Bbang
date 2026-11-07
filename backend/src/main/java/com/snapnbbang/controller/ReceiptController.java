@@ -1,6 +1,10 @@
 package com.snapnbbang.controller;
 
-import org.springframework.http.HttpStatus;
+import com.snapnbbang.dto.ReceiptParseResponse;
+import com.snapnbbang.service.ReceiptParseService;
+import com.snapnbbang.service.ReceiptRateLimiter;
+import jakarta.servlet.http.HttpServletRequest;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -12,11 +16,35 @@ import org.springframework.web.multipart.MultipartFile;
 @RequestMapping("/api/receipts")
 public class ReceiptController {
 
-    @PostMapping("/parse")
-    public ResponseEntity<Void> parseReceipt(
-            @RequestParam(value = "file", required = false) MultipartFile file) {
-        // TODO: 영수증 이미지 검증 및 Gemini 멀티모달 API 파싱 구현
-        return ResponseEntity.status(HttpStatus.NOT_IMPLEMENTED).build();
+    private final ReceiptParseService receiptParseService;
+    private final ReceiptRateLimiter receiptRateLimiter;
+
+    public ReceiptController(
+            ReceiptParseService receiptParseService,
+            ReceiptRateLimiter receiptRateLimiter) {
+        this.receiptParseService = receiptParseService;
+        this.receiptRateLimiter = receiptRateLimiter;
+    }
+
+    @PostMapping(value = "/parse", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public ResponseEntity<ReceiptParseResponse> parseReceipt(
+            @RequestParam(value = "image", required = false) MultipartFile image,
+            HttpServletRequest request) {
+        receiptRateLimiter.checkAndRecord(extractClientIp(request));
+        ReceiptParseResponse response = receiptParseService.parseReceipt(image);
+        return ResponseEntity.ok(response);
+    }
+
+    private String extractClientIp(HttpServletRequest request) {
+        if (request == null) {
+            return "unknown";
+        }
+        String forwardedFor = request.getHeader("X-Forwarded-For");
+        if (forwardedFor != null && !forwardedFor.isBlank()) {
+            int commaIdx = forwardedFor.indexOf(',');
+            return (commaIdx > 0 ? forwardedFor.substring(0, commaIdx) : forwardedFor).trim();
+        }
+        String remoteAddr = request.getRemoteAddr();
+        return (remoteAddr == null || remoteAddr.isBlank()) ? "unknown" : remoteAddr;
     }
 }
-
