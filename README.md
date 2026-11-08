@@ -44,7 +44,7 @@ React (Vite) · Spring Boot · MyBatis · MySQL · Gemini API
 - [x] 프로젝트 세팅, 백엔드 뼈대
 - [x] 프론트 뼈대
 - [x] 영수증 파싱 API (mock)
-- [ ] 영수증 파싱 (Gemini 실연동)
+- [x] 영수증 파싱 (Gemini 실연동)
 - [ ] 정산 계산, 정산 API
 - [ ] 화면 연결, PWA, 보안 마감
 
