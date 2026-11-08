@@ -6,22 +6,41 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.snapnbbang.common.GlobalExceptionHandler;
 import com.snapnbbang.common.RateLimitExceededException;
 import com.snapnbbang.common.ReceiptParseException;
 import com.snapnbbang.controller.ReceiptController;
 import com.snapnbbang.dto.ReceiptParseResponse;
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.net.SocketTimeoutException;
+import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneOffset;
+import java.util.Base64;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpMethod;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.HttpStatusCode;
+import org.springframework.http.client.ClientHttpRequest;
+import org.springframework.http.client.ClientHttpRequestFactory;
+import org.springframework.http.client.ClientHttpResponse;
 import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
@@ -60,8 +79,18 @@ class ReceiptParseServiceTest {
     }
 
     @Test
-    @DisplayName("GEMINI_MOCK=true 모드에서 유효한 JPEG/PNG/WEBP 업로드 시 통돼지집 샘플 JSON을 반환한다")
-    void parseReceipt_mockMode_success() throws Exception {
+    @DisplayName("GEMINI_MOCK=true 모드에서 키와 모델이 비어 있어도 Gemini를 호출하지 않고 통돼지집 샘플 JSON을 반환한다")
+    void parseReceipt_mockMode_emptyKeyAndModel_doesNotCallExternalServer() throws Exception {
+        AtomicInteger serverHitCount = new AtomicInteger(0);
+        ClientHttpRequestFactory spyFactory = (uri, httpMethod) -> {
+            serverHitCount.incrementAndGet();
+            throw new AssertionError("GEMINI_MOCK=true 일 때는 외부 HTTP 요청이 생성되면 안 됩니다.");
+        };
+
+        GeminiClient clientWithEmptyKeyAndModel = new GeminiClient(
+                true, "", "", "https://generativelanguage.googleapis.com", spyFactory, objectMapper);
+        ReceiptParseService service = new ReceiptParseService(clientWithEmptyKeyAndModel, objectMapper);
+
         MockMultipartFile jpegFile = new MockMultipartFile(
                 "image", "receipt.jpg", "image/jpeg", VALID_JPEG_BYTES);
         MockMultipartFile pngFile = new MockMultipartFile(
@@ -69,8 +98,8 @@ class ReceiptParseServiceTest {
         MockMultipartFile webpFile = new MockMultipartFile(
                 "image", "receipt.webp", "image/webp", VALID_WEBP_BYTES);
 
-        ReceiptParseResponse pngRes = receiptParseService.parseReceipt(pngFile);
-        ReceiptParseResponse webpRes = receiptParseService.parseReceipt(webpFile);
+        ReceiptParseResponse pngRes = service.parseReceipt(pngFile);
+        ReceiptParseResponse webpRes = service.parseReceipt(webpFile);
         assertThat(pngRes.getPlaceName()).isEqualTo("통돼지집");
         assertThat(webpRes.getReceiptTotal()).isEqualTo(50000);
 
@@ -87,28 +116,247 @@ class ReceiptParseServiceTest {
                 .andExpect(jsonPath("$.receiptTotal").value(50000))
                 .andExpect(jsonPath("$.adjustmentAmount").value(0))
                 .andExpect(jsonPath("$.warnings").isEmpty());
+
+        assertThat(serverHitCount.get()).isZero();
+    }
+
+    @Test
+    @DisplayName("실제 Gemini 응답 구조(thoughtSignature·usageMetadata·modelVersion 포함)와 ```json 코드블록을 파싱한다")
+    void extractModelText_realResponseStructureWithCodeFence_success() {
+        String geminiApiEnvelope = """
+                {
+                  "candidates": [
+                    {
+                      "content": {
+                        "parts": [
+                          {
+                            "text": "```json\\n{\\n  \\"placeName\\": \\"역전할머니맥주\\",\\n  \\"items\\": [\\n    { \\"name\\": \\"먹태\\", \\"qty\\": 1, \\"price\\": 15000 },\\n    { \\"name\\": \\"생맥주\\", \\"qty\\": 3, \\"price\\": 12000 }\\n  ],\\n  \\"receiptTotal\\": 27000,\\n  \\"adjustmentAmount\\": 0,\\n  \\"warnings\\": []\\n}\\n```",
+                            "thoughtSignature": "EtcDCtQDAWkUfRNhNt75l+fK5/UEjkKJym0pkbdqoqZuESHDvIxN3YEGM4sisiJPSwfKsxHiUebnIW9RiNXLErlRiNbmZHyxufLXLPHfkWVPEwjMUXTycklDm8V0No2T0l4EaqFwJu66eY1jToGJlwhNgLl9BU7HbAy7kX3TvqTxa81nB8NLAdkUDBzA4pc9aEpp5nzVswZFXCVwtwcAqzSw1K8N5FV6ERon5qOQEhr1KMj/XfzAc/dV5IcjGqN34LTdEcuG5OgJ5aGETOvpS6Hm6+SXnG8LCKIMm58/OF51BBq0g1Sw+sbjSAxrg6vEIIkvNfk+0uGAZst2m4jt9+cG2AcuDy+6ZJLGsNneEeezvIy6+bvGFKtXO/JtDwcyOX7kVbrkaMkixEPXGD4gvATnNRMuU6ZTx+FOeF0zoaMNhke8xpkgQRao69B7bPhLpSbbVRySFScMOWRtWS4fUULX/cS5fMACsxPNnParGlL/iZQN0CItvUd/XxJKRn3iQRIOf9jg+w4sSFVS8mm26qnptDIcp1DXoaMONM+wdpOWVnp43xjyicq50Srsh8YYXkjwlHw773DKU5ORI4FosGCTqfYGbrmPNvdy2Ss+nOPGfNaJNFY8qvxF"
+                          }
+                        ],
+                        "role": "model"
+                      },
+                      "finishReason": "STOP",
+                      "index": 0
+                    }
+                  ],
+                  "usageMetadata": {
+                    "promptTokenCount": 5,
+                    "candidatesTokenCount": 1,
+                    "totalTokenCount": 121,
+                    "promptTokensDetails": [
+                      {
+                        "modality": "TEXT",
+                        "tokenCount": 5
+                      }
+                    ],
+                    "thoughtsTokenCount": 115,
+                    "serviceTier": "standard"
+                  },
+                  "modelVersion": "gemini-3.6-flash",
+                  "responseId": "VAPwapnYCM7Y9tMPq7eM8A8"
+                }
+                """;
+
+        String extractedJson = mockGeminiClient.extractModelText(geminiApiEnvelope);
+        ReceiptParseResponse response = receiptParseService.validateAndBuildResponse(extractedJson);
+
+        assertThat(response.getPlaceName()).isEqualTo("역전할머니맥주");
+        assertThat(response.getItems()).hasSize(2);
+        assertThat(response.getItems().get(0).getName()).isEqualTo("먹태");
+        assertThat(response.getItems().get(0).getPrice()).isEqualTo(15000);
+        assertThat(response.getReceiptTotal()).isEqualTo(27000);
+        assertThat(response.getWarnings()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("가짜 서버 검증: 요청 형식(헤더 키, URL ?key= 미포함, inline_data/text 본문) 및 401·403·429·5xx·타임아웃 매핑")
+    void geminiClient_fakeServer_requestFormatAndErrorStatusMapping() throws Exception {
+        AtomicInteger nextStatus = new AtomicInteger(200);
+        AtomicBoolean simulateTimeout = new AtomicBoolean(false);
+        AtomicReference<URI> capturedUri = new AtomicReference<>();
+        AtomicReference<HttpMethod> capturedMethod = new AtomicReference<>();
+        AtomicReference<HttpHeaders> capturedHeaders = new AtomicReference<>();
+        AtomicReference<String> capturedBody = new AtomicReference<>();
+
+        String sampleSuccessEnvelope = """
+                {
+                  "candidates": [
+                    {
+                      "content": {
+                        "parts": [
+                          {
+                            "text": "```json\\n{\\"placeName\\":\\"일미집\\",\\"items\\":[{\\"name\\":\\"삼겹살\\",\\"qty\\":2,\\"price\\":30000}],\\"receiptTotal\\":30000,\\"adjustmentAmount\\":0,\\"warnings\\":[]}\\n```",
+                            "thoughtSignature": "sig-123"
+                          }
+                        ],
+                        "role": "model"
+                      },
+                      "finishReason": "STOP",
+                      "index": 0
+                    }
+                  ],
+                  "modelVersion": "gemini-3.6-flash"
+                }
+                """;
+
+        ClientHttpRequestFactory fakeServerFactory = (uri, httpMethod) -> new ClientHttpRequest() {
+            private final HttpHeaders headers = new HttpHeaders();
+            private final ByteArrayOutputStream bodyStream = new ByteArrayOutputStream();
+
+            @Override
+            public ClientHttpResponse execute() throws IOException {
+                capturedUri.set(uri);
+                capturedMethod.set(httpMethod);
+                capturedHeaders.set(headers);
+                capturedBody.set(bodyStream.toString(StandardCharsets.UTF_8));
+
+                if (simulateTimeout.get()) {
+                    throw new SocketTimeoutException("Read timed out");
+                }
+
+                int status = nextStatus.get();
+                byte[] responseBytes = (status == 200)
+                        ? sampleSuccessEnvelope.getBytes(StandardCharsets.UTF_8)
+                        : "{\"error\":{\"message\":\"internal secret reason\"}}".getBytes(StandardCharsets.UTF_8);
+
+                return new ClientHttpResponse() {
+                    @Override
+                    public HttpStatusCode getStatusCode() {
+                        return HttpStatusCode.valueOf(status);
+                    }
+
+                    @Override
+                    public String getStatusText() {
+                        return HttpStatus.valueOf(status).getReasonPhrase();
+                    }
+
+                    @Override
+                    public void close() {
+                    }
+
+                    @Override
+                    public InputStream getBody() {
+                        return new ByteArrayInputStream(responseBytes);
+                    }
+
+                    @Override
+                    public HttpHeaders getHeaders() {
+                        HttpHeaders respHeaders = new HttpHeaders();
+                        respHeaders.add(HttpHeaders.CONTENT_TYPE, "application/json");
+                        return respHeaders;
+                    }
+                };
+            }
+
+            @Override
+            public OutputStream getBody() {
+                return bodyStream;
+            }
+
+            @Override
+            public HttpMethod getMethod() {
+                return httpMethod;
+            }
+
+            @Override
+            public URI getURI() {
+                return uri;
+            }
+
+            @Override
+            public HttpHeaders getHeaders() {
+                return headers;
+            }
+        };
+
+        String aqKey = "AQ.Ab8RN6L_new_format_test_key_98765";
+        GeminiClient liveClient = new GeminiClient(
+                false,
+                "gemini-3.6-flash",
+                aqKey,
+                "https://generativelanguage.googleapis.com",
+                fakeServerFactory,
+                objectMapper
+        );
+        ReceiptParseService liveService = new ReceiptParseService(liveClient, objectMapper);
+        MockMvc liveMvc = MockMvcBuilders.standaloneSetup(
+                        new ReceiptController(liveService, new ReceiptRateLimiter()))
+                .setControllerAdvice(new GlobalExceptionHandler())
+                .build();
+
+        MockMultipartFile jpegFile = new MockMultipartFile(
+                "image", "receipt.jpg", "image/jpeg", VALID_JPEG_BYTES);
+
+        // 1. 200 OK 및 요청 포맷 검증
+        nextStatus.set(200);
+        liveMvc.perform(multipart("/api/receipts/parse").file(jpegFile))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.placeName").value("일미집"))
+                .andExpect(jsonPath("$.items[0].name").value("삼겹살"))
+                .andExpect(jsonPath("$.items[0].price").value(30000));
+
+        assertThat(capturedMethod.get()).isEqualTo(HttpMethod.POST);
+        assertThat(capturedUri.get().toString())
+                .isEqualTo("https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent");
+        assertThat(capturedUri.get().getRawQuery()).isNull(); // URL에 ?key= 가 절대 붙지 않아야 함
+        assertThat(capturedHeaders.get().getFirst("x-goog-api-key")).isEqualTo(aqKey);
+        assertThat(capturedHeaders.get().getFirst(HttpHeaders.CONTENT_TYPE)).startsWith("application/json");
+
+        JsonNode sentJson = objectMapper.readTree(capturedBody.get());
+        JsonNode parts = sentJson.path("contents").get(0).path("parts");
+        assertThat(parts.get(0).path("inline_data").path("mime_type").asText()).isEqualTo("image/jpeg");
+        assertThat(parts.get(0).path("inline_data").path("data").asText())
+                .isEqualTo(Base64.getEncoder().encodeToString(VALID_JPEG_BYTES));
+        assertThat(parts.get(1).path("text").asText()).isEqualTo(GeminiClient.RECEIPT_PARSE_PROMPT);
+
+        // 2. 401 Unauthorized -> 500 "서버 설정 오류" (내부 에러 이유 노출 금지)
+        nextStatus.set(401);
+        liveMvc.perform(multipart("/api/receipts/parse").file(jpegFile))
+                .andExpect(status().isInternalServerError())
+                .andExpect(jsonPath("$.message").value("서버 설정 오류"));
+
+        // 3. 403 Forbidden -> 500 "서버 설정 오류"
+        nextStatus.set(403);
+        liveMvc.perform(multipart("/api/receipts/parse").file(jpegFile))
+                .andExpect(status().isInternalServerError())
+                .andExpect(jsonPath("$.message").value("서버 설정 오류"));
+
+        // 4. 429 Too Many Requests -> 429
+        nextStatus.set(429);
+        liveMvc.perform(multipart("/api/receipts/parse").file(jpegFile))
+                .andExpect(status().isTooManyRequests());
+
+        // 5. 503 Service Unavailable -> 502 "영수증을 읽지 못했어요"
+        nextStatus.set(503);
+        liveMvc.perform(multipart("/api/receipts/parse").file(jpegFile))
+                .andExpect(status().isBadGateway())
+                .andExpect(jsonPath("$.message").value("영수증을 읽지 못했어요"));
+
+        // 6. 응답 타임아웃(SocketTimeoutException) -> 502 "영수증을 읽지 못했어요"
+        nextStatus.set(200);
+        simulateTimeout.set(true);
+        liveMvc.perform(multipart("/api/receipts/parse").file(jpegFile))
+                .andExpect(status().isBadGateway())
+                .andExpect(jsonPath("$.message").value("영수증을 읽지 못했어요"));
     }
 
     @Test
     @DisplayName("입력 검증: 파일 누락, 빈 파일, 시그니처 위조(GIF/텍스트), 5MB 초과 시 400을 반환한다")
     void parseReceipt_invalidInput_returns400() throws Exception {
-        // 1. 파일 누락
         mockMvc.perform(multipart("/api/receipts/parse"))
                 .andExpect(status().isBadRequest());
 
-        // 2. JPEG Content-Type이지만 실제 바이트는 GIF 시그니처("GIF89a")인 경우
         MockMultipartFile spoofedGif = new MockMultipartFile(
                 "image", "fake.jpg", "image/jpeg", "GIF89a0000".getBytes(StandardCharsets.UTF_8));
         mockMvc.perform(multipart("/api/receipts/parse").file(spoofedGif))
                 .andExpect(status().isBadRequest());
 
-        // 3. Content-Type(image/png)과 시그니처(JPEG)가 서로 다른 경우
         MockMultipartFile mismatchedType = new MockMultipartFile(
                 "image", "mismatch.png", "image/png", VALID_JPEG_BYTES);
         mockMvc.perform(multipart("/api/receipts/parse").file(mismatchedType))
                 .andExpect(status().isBadRequest());
 
-        // 4. 5MB 초과 (5MB + 1바이트)
         byte[] oversized = new byte[(int) ReceiptParseService.MAX_IMAGE_BYTES + 1];
         oversized[0] = (byte) 0xFF;
         oversized[1] = (byte) 0xD8;
@@ -141,7 +389,6 @@ class ReceiptParseServiceTest {
     @Test
     @DisplayName("출력 검증: items 개수(>50), name 길이(>60), price 범위(0~10,000,000), qty(<1), 비정상 JSON은 502를 던진다")
     void validateOutput_outOfRangeOrMalformed_throwsReceiptParseException() throws Exception {
-        // 1. 깨진 JSON -> HTTP 502 + "영수증을 읽지 못했어요"
         GeminiClient brokenClient = new GeminiClient(false, "gemini-test", "key") {
             @Override
             public String parseReceiptImage(byte[] imageBytes, String mimeType) {
@@ -159,14 +406,12 @@ class ReceiptParseServiceTest {
                 .andExpect(status().isBadGateway())
                 .andExpect(jsonPath("$.message").value("영수증을 읽지 못했어요"));
 
-        // 2. items 51개 초과
         String fiftyOneItems = IntStream.range(0, 51)
                 .mapToObj(i -> "{\"name\":\"메뉴" + i + "\",\"qty\":1,\"price\":1000}")
                 .collect(Collectors.joining(",", "{\"items\":[", "],\"receiptTotal\":51000,\"adjustmentAmount\":0}"));
         assertThatThrownBy(() -> receiptParseService.validateAndBuildResponse(fiftyOneItems))
                 .isInstanceOf(ReceiptParseException.class);
 
-        // 3. name 61자 초과
         String longName = "가".repeat(61);
         String longNameJson = """
                 {"items":[{"name":"%s","qty":1,"price":10000}],"receiptTotal":10000,"adjustmentAmount":0}
@@ -174,7 +419,6 @@ class ReceiptParseServiceTest {
         assertThatThrownBy(() -> receiptParseService.validateAndBuildResponse(longNameJson))
                 .isInstanceOf(ReceiptParseException.class);
 
-        // 4. price 범위 위반 (음수 및 10,000,000 초과, 소수점)
         String negativePriceJson = """
                 {"items":[{"name":"메뉴","qty":1,"price":-100}],"receiptTotal":0,"adjustmentAmount":0}
                 """;
@@ -191,7 +435,6 @@ class ReceiptParseServiceTest {
         assertThatThrownBy(() -> receiptParseService.validateAndBuildResponse(floatPriceJson))
                 .isInstanceOf(ReceiptParseException.class);
 
-        // 5. qty 1 미만
         String zeroQtyJson = """
                 {"items":[{"name":"메뉴","qty":0,"price":5000}],"receiptTotal":5000,"adjustmentAmount":0}
                 """;
@@ -201,7 +444,7 @@ class ReceiptParseServiceTest {
 
     @Test
     @DisplayName("호출 횟수 제한: 동일 IP에서 시간당 20회 초과 시 429를 반환하고 1시간 뒤 해제된다")
-    void rateLimiter_exceeds20PerHour_returns429() throws Exception {
+    void rateLimiter_exceeds20PerHour_returns429() {
         Instant baseTime = Instant.parse("2026-11-05T10:00:00Z");
         final Instant[] current = new Instant[]{baseTime};
         Clock mutableClock = new Clock() {
@@ -226,16 +469,12 @@ class ReceiptParseServiceTest {
             customLimiter.checkAndRecord("203.0.113.10");
         }
 
-        // 21번째 호출은 429 예외 발생
         assertThatThrownBy(() -> customLimiter.checkAndRecord("203.0.113.10"))
                 .isInstanceOf(RateLimitExceededException.class);
 
-        // 다른 IP는 정상 통과
         customLimiter.checkAndRecord("203.0.113.11");
 
-        // 1시간 + 1초 경과 후에는 다시 호출 가능
         current[0] = baseTime.plus(Duration.ofHours(1).plusSeconds(1));
         customLimiter.checkAndRecord("203.0.113.10");
     }
 }
-

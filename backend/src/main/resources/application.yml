@@ -18,8 +18,8 @@ mybatis:
 app:
   frontend-origin: ${FRONTEND_ORIGIN}
   gemini:
-    api-key: ${GEMINI_API_KEY}
-    model: ${GEMINI_MODEL}
+    api-key: ${GEMINI_API_KEY:}
+    model: ${GEMINI_MODEL:}
 
 server:
   error:

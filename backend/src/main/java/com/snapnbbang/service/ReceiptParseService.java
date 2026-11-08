@@ -148,9 +148,14 @@ public class ReceiptParseService {
             throw new ReceiptParseException();
         }
 
+        String cleanedJson = GeminiClient.stripCodeBlock(rawJson);
+        if (cleanedJson == null || cleanedJson.isBlank()) {
+            throw new ReceiptParseException();
+        }
+
         JsonNode root;
         try {
-            root = objectMapper.readTree(rawJson);
+            root = objectMapper.readTree(cleanedJson);
         } catch (JsonProcessingException ex) {
             throw new ReceiptParseException();
         }

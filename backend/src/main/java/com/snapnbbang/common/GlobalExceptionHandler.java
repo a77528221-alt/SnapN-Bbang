@@ -55,6 +55,13 @@ public class GlobalExceptionHandler {
                 .body(new ErrorResponse(BAD_REQUEST_MESSAGE));
     }
 
+    @ExceptionHandler(ServerConfigurationException.class)
+    public ResponseEntity<ErrorResponse> handleServerConfigurationException(ServerConfigurationException ex) {
+        return ResponseEntity
+                .status(HttpStatus.INTERNAL_SERVER_ERROR)
+                .body(new ErrorResponse(ServerConfigurationException.DEFAULT_MESSAGE));
+    }
+
     @ExceptionHandler(RateLimitExceededException.class)
     public ResponseEntity<ErrorResponse> handleRateLimitExceeded(RateLimitExceededException ex) {
         return ResponseEntity
