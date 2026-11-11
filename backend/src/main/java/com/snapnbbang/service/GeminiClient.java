@@ -8,11 +8,15 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.snapnbbang.common.RateLimitExceededException;
 import com.snapnbbang.common.ReceiptParseException;
 import com.snapnbbang.common.ServerConfigurationException;
+import java.net.SocketTimeoutException;
 import java.net.URI;
 import java.net.URLEncoder;
+import java.net.http.HttpTimeoutException;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.Base64;
+import java.util.regex.Pattern;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.MediaType;
@@ -32,12 +36,14 @@ import org.springframework.web.client.RestClient;
  * - GEMINI_MOCK=true 환경에서는 키·모델 설정 여부와 무관하게 외부 API를 호출하지 않고 샘플 JSON을 반환한다.
  * - 요청·응답 본문, API 키, 이미지 바이트, 요청 URL은 로그나 예외 메시지에 절대 남기지 않는다.
  */
+@Slf4j
 @Component
 public class GeminiClient {
 
     public static final String DEFAULT_BASE_URL = "https://generativelanguage.googleapis.com";
     public static final Duration CONNECT_TIMEOUT = Duration.ofSeconds(5);
     public static final Duration RESPONSE_TIMEOUT = Duration.ofSeconds(30);
+    private static final Pattern SAFE_FINISH_REASON_PATTERN = Pattern.compile("^[A-Za-z0-9_]{1,32}$");
 
     /**
      * Gemini에 전달할 한국어 지시문.
@@ -74,6 +80,8 @@ public class GeminiClient {
     private final String baseUrl;
     private final RestClient restClient;
     private final ObjectMapper objectMapper;
+    private final ThreadLocal<CallDiagnostics> lastDiagnostics =
+            ThreadLocal.withInitial(() -> new CallDiagnostics("없음", "없음"));
 
     @Autowired
     public GeminiClient(
@@ -136,11 +144,15 @@ public class GeminiClient {
      * 영수증 이미지 바이트와 MIME 타입을 받아 모델이 생성한 JSON 문자열(코드블록 제거 완료)을 반환한다.
      */
     public String parseReceiptImage(byte[] imageBytes, String mimeType) {
+        lastDiagnostics.set(new CallDiagnostics("없음", "없음"));
+
         if (mockEnabled) {
+            lastDiagnostics.set(new CallDiagnostics("MOCK", "STOP"));
             return MOCK_SAMPLE_JSON;
         }
 
         if (model == null || model.isBlank() || apiKey == null || apiKey.isBlank()) {
+            log.warn("단계=설정 누락, 상태코드=없음, finishReason=없음");
             throw new ServerConfigurationException();
         }
 
@@ -156,23 +168,30 @@ public class GeminiClient {
                     .body(requestPayload)
                     .exchange((request, response) -> {
                         int statusCode = response.getStatusCode().value();
+                        String statusStr = String.valueOf(statusCode);
+                        lastDiagnostics.set(new CallDiagnostics(statusStr, "없음"));
+
                         if (statusCode == 401 || statusCode == 403) {
+                            log.warn("단계=인증 실패, 상태코드={}, finishReason=없음", statusCode);
                             throw new ServerConfigurationException();
                         }
                         if (statusCode == 429) {
+                            log.warn("단계=호출 한도 초과, 상태코드={}, finishReason=없음", statusCode);
                             throw new RateLimitExceededException();
                         }
                         if (statusCode < 200 || statusCode >= 300) {
+                            log.warn("단계=HTTP 오류, 상태코드={}, finishReason=없음", statusCode);
                             throw new ReceiptParseException();
                         }
                         String responseBody = StreamUtils.copyToString(
                                 response.getBody(), StandardCharsets.UTF_8);
-                        return extractModelText(responseBody);
+                        return extractModelText(responseBody, statusStr);
                     });
         } catch (ServerConfigurationException | RateLimitExceededException | ReceiptParseException ex) {
             throw ex;
         } catch (Exception ex) {
-            // 타임아웃(SocketTimeoutException 등) 및 네트워크 오류는 502로 변환하며 내부 URL·메시지를 노출하지 않음
+            String stage = isTimeoutException(ex) ? "시간 초과" : "연결 실패";
+            log.warn("단계={}, 상태코드=없음, finishReason=없음", stage);
             throw new ReceiptParseException();
         }
     }
@@ -209,7 +228,12 @@ public class GeminiClient {
      * 마크다운 코드블록(```)을 벗겨내어 반환한다.
      */
     public String extractModelText(String geminiResponseBody) {
+        return extractModelText(geminiResponseBody, "200");
+    }
+
+    String extractModelText(String geminiResponseBody, String statusCode) {
         if (geminiResponseBody == null || geminiResponseBody.isBlank()) {
+            log.warn("단계=응답 구조 불일치, 상태코드={}, finishReason=없음", statusCode);
             throw new ReceiptParseException();
         }
 
@@ -217,16 +241,23 @@ public class GeminiClient {
         try {
             root = objectMapper.readTree(geminiResponseBody);
         } catch (JsonProcessingException ex) {
+            log.warn("단계=응답 구조 불일치, 상태코드={}, finishReason=없음", statusCode);
             throw new ReceiptParseException();
         }
 
         JsonNode candidates = root.path("candidates");
         if (!candidates.isArray() || candidates.isEmpty()) {
+            log.warn("단계=응답 구조 불일치, 상태코드={}, finishReason=없음", statusCode);
             throw new ReceiptParseException();
         }
 
-        JsonNode parts = candidates.get(0).path("content").path("parts");
+        JsonNode firstCandidate = candidates.get(0);
+        String finishReason = extractSafeFinishReason(firstCandidate);
+        lastDiagnostics.set(new CallDiagnostics(statusCode, finishReason));
+
+        JsonNode parts = firstCandidate.path("content").path("parts");
         if (!parts.isArray() || parts.isEmpty()) {
+            log.warn("단계=응답 구조 불일치, 상태코드={}, finishReason={}", statusCode, finishReason);
             throw new ReceiptParseException();
         }
 
@@ -240,10 +271,37 @@ public class GeminiClient {
 
         String rawText = extracted.toString().trim();
         if (rawText.isEmpty()) {
+            log.warn("단계=응답 구조 불일치, 상태코드={}, finishReason={}", statusCode, finishReason);
             throw new ReceiptParseException();
         }
 
         return stripCodeBlock(rawText);
+    }
+
+    private String extractSafeFinishReason(JsonNode candidateNode) {
+        if (candidateNode == null) {
+            return "없음";
+        }
+        JsonNode reasonNode = candidateNode.get("finishReason");
+        if (reasonNode == null || !reasonNode.isTextual()) {
+            return "없음";
+        }
+        String candidate = reasonNode.asText().trim();
+        if (SAFE_FINISH_REASON_PATTERN.matcher(candidate).matches()) {
+            return candidate;
+        }
+        return "없음";
+    }
+
+    private boolean isTimeoutException(Throwable throwable) {
+        Throwable curr = throwable;
+        while (curr != null) {
+            if (curr instanceof SocketTimeoutException || curr instanceof HttpTimeoutException) {
+                return true;
+            }
+            curr = curr.getCause();
+        }
+        return false;
     }
 
     /**
@@ -269,11 +327,18 @@ public class GeminiClient {
         return trimmed;
     }
 
+    CallDiagnostics getLastDiagnostics() {
+        return lastDiagnostics.get();
+    }
+
     public boolean isMockEnabled() {
         return mockEnabled;
     }
 
     public String getModel() {
         return model;
+    }
+
+    record CallDiagnostics(String statusCode, String finishReason) {
     }
 }

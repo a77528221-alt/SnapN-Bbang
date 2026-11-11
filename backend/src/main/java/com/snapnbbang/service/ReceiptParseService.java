@@ -6,14 +6,17 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.snapnbbang.common.ReceiptParseException;
 import com.snapnbbang.dto.ReceiptParseResponse;
 import com.snapnbbang.dto.ReceiptParseResponse.ReceiptItem;
+import com.snapnbbang.service.GeminiClient.CallDiagnostics;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
+@Slf4j
 @Service
 public class ReceiptParseService {
 
@@ -89,14 +92,12 @@ public class ReceiptParseService {
         }
 
         String rawModelJson = geminiClient.parseReceiptImage(bytes, detectedMimeType);
-        return validateAndBuildResponse(rawModelJson);
+        CallDiagnostics diag = geminiClient.getLastDiagnostics();
+        return validateAndBuildResponse(rawModelJson, diag.statusCode(), diag.finishReason());
     }
 
     /**
      * 파일 시그니처(매직 바이트)를 확인하여 MIME 타입을 판별한다.
-     * - JPEG: FF D8 FF
-     * - PNG : 89 50 4E 47 0D 0A 1A 0A
-     * - WEBP: 52 49 46 46 ("RIFF") ... 57 45 42 50 ("WEBP")
      */
     public String detectMimeTypeBySignature(byte[] bytes) {
         if (bytes == null || bytes.length < 3) {
@@ -141,15 +142,23 @@ public class ReceiptParseService {
 
     /**
      * 모델 응답 JSON 문자열을 파싱하고 출력 제약 조건을 검증한다.
-     * 위반 시 ReceiptParseException (502 Bad Gateway, "영수증을 읽지 못했어요") 발생.
+     * 위반 시 진단 로그(단계, 상태코드, finishReason, 규칙 이름만)를 남기고 ReceiptParseException(502) 발생.
      */
     public ReceiptParseResponse validateAndBuildResponse(String rawJson) {
+        CallDiagnostics diag = geminiClient.getLastDiagnostics();
+        return validateAndBuildResponse(rawJson, diag.statusCode(), diag.finishReason());
+    }
+
+    ReceiptParseResponse validateAndBuildResponse(
+            String rawJson, String statusCode, String finishReason) {
         if (rawJson == null || rawJson.isBlank()) {
+            log.warn("단계=JSON 파싱 실패, 상태코드={}, finishReason={}", statusCode, finishReason);
             throw new ReceiptParseException();
         }
 
         String cleanedJson = GeminiClient.stripCodeBlock(rawJson);
         if (cleanedJson == null || cleanedJson.isBlank()) {
+            log.warn("단계=JSON 파싱 실패, 상태코드={}, finishReason={}", statusCode, finishReason);
             throw new ReceiptParseException();
         }
 
@@ -157,10 +166,12 @@ public class ReceiptParseService {
         try {
             root = objectMapper.readTree(cleanedJson);
         } catch (JsonProcessingException ex) {
+            log.warn("단계=JSON 파싱 실패, 상태코드={}, finishReason={}", statusCode, finishReason);
             throw new ReceiptParseException();
         }
 
         if (root == null || !root.isObject()) {
+            logValidationFailure(statusCode, finishReason, "JSON 객체 형식");
             throw new ReceiptParseException();
         }
 
@@ -169,6 +180,7 @@ public class ReceiptParseService {
         JsonNode placeNameNode = root.get("placeName");
         if (placeNameNode != null && !placeNameNode.isNull()) {
             if (!placeNameNode.isTextual()) {
+                logValidationFailure(statusCode, finishReason, "가게 이름 형식");
                 throw new ReceiptParseException();
             }
             placeName = placeNameNode.asText();
@@ -177,6 +189,7 @@ public class ReceiptParseService {
         // 2. items 검증 (필수 배열, 최대 50개)
         JsonNode itemsNode = root.get("items");
         if (itemsNode == null || !itemsNode.isArray() || itemsNode.size() > MAX_ITEMS_COUNT) {
+            logValidationFailure(statusCode, finishReason, "항목 수");
             throw new ReceiptParseException();
         }
 
@@ -185,33 +198,40 @@ public class ReceiptParseService {
 
         for (JsonNode itemNode : itemsNode) {
             if (itemNode == null || !itemNode.isObject()) {
+                logValidationFailure(statusCode, finishReason, "항목 형식");
                 throw new ReceiptParseException();
             }
 
             JsonNode nameNode = itemNode.get("name");
             if (nameNode == null || !nameNode.isTextual()) {
+                logValidationFailure(statusCode, finishReason, "이름 길이");
                 throw new ReceiptParseException();
             }
             String name = nameNode.asText();
             if (name.isBlank() || name.length() > MAX_ITEM_NAME_LENGTH) {
+                logValidationFailure(statusCode, finishReason, "이름 길이");
                 throw new ReceiptParseException();
             }
 
             JsonNode qtyNode = itemNode.get("qty");
             if (qtyNode == null || !qtyNode.isIntegralNumber() || !qtyNode.canConvertToInt()) {
+                logValidationFailure(statusCode, finishReason, "수량 범위");
                 throw new ReceiptParseException();
             }
             int qty = qtyNode.intValue();
             if (qty < MIN_ITEM_QTY) {
+                logValidationFailure(statusCode, finishReason, "수량 범위");
                 throw new ReceiptParseException();
             }
 
             JsonNode priceNode = itemNode.get("price");
             if (priceNode == null || !priceNode.isIntegralNumber() || !priceNode.canConvertToInt()) {
+                logValidationFailure(statusCode, finishReason, "가격 범위");
                 throw new ReceiptParseException();
             }
             int price = priceNode.intValue();
             if (price < MIN_ITEM_PRICE || price > MAX_ITEM_PRICE) {
+                logValidationFailure(statusCode, finishReason, "가격 범위");
                 throw new ReceiptParseException();
             }
 
@@ -224,10 +244,12 @@ public class ReceiptParseService {
         JsonNode receiptTotalNode = root.get("receiptTotal");
         if (receiptTotalNode != null && !receiptTotalNode.isNull()) {
             if (!receiptTotalNode.isIntegralNumber() || !receiptTotalNode.canConvertToInt()) {
+                logValidationFailure(statusCode, finishReason, "합계 범위");
                 throw new ReceiptParseException();
             }
             int totalVal = receiptTotalNode.intValue();
             if (totalVal < 0) {
+                logValidationFailure(statusCode, finishReason, "합계 범위");
                 throw new ReceiptParseException();
             }
             receiptTotal = totalVal;
@@ -238,6 +260,7 @@ public class ReceiptParseService {
         JsonNode adjustmentNode = root.get("adjustmentAmount");
         if (adjustmentNode != null && !adjustmentNode.isNull()) {
             if (!adjustmentNode.isIntegralNumber() || !adjustmentNode.canConvertToInt()) {
+                logValidationFailure(statusCode, finishReason, "가감액 범위");
                 throw new ReceiptParseException();
             }
             adjustmentAmount = adjustmentNode.intValue();
@@ -248,10 +271,12 @@ public class ReceiptParseService {
         JsonNode warningsNode = root.get("warnings");
         if (warningsNode != null && !warningsNode.isNull()) {
             if (!warningsNode.isArray()) {
+                logValidationFailure(statusCode, finishReason, "경고 형식");
                 throw new ReceiptParseException();
             }
             for (JsonNode w : warningsNode) {
                 if (!w.isTextual()) {
+                    logValidationFailure(statusCode, finishReason, "경고 형식");
                     throw new ReceiptParseException();
                 }
                 warnings.add(w.asText());
@@ -272,5 +297,13 @@ public class ReceiptParseService {
                 warnings
         );
     }
-}
 
+    private void logValidationFailure(String statusCode, String finishReason, String ruleName) {
+        log.warn(
+                "단계=출력 검증 실패, 상태코드={}, finishReason={}, 규칙={}",
+                statusCode,
+                finishReason,
+                ruleName
+        );
+    }
+}

@@ -6,6 +6,9 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.snapnbbang.common.GlobalExceptionHandler;
@@ -26,6 +29,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.Base64;
+import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
@@ -34,6 +38,7 @@ import java.util.stream.IntStream;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
@@ -299,7 +304,7 @@ class ReceiptParseServiceTest {
         assertThat(capturedMethod.get()).isEqualTo(HttpMethod.POST);
         assertThat(capturedUri.get().toString())
                 .isEqualTo("https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent");
-        assertThat(capturedUri.get().getRawQuery()).isNull(); // URL에 ?key= 가 절대 붙지 않아야 함
+        assertThat(capturedUri.get().getRawQuery()).isNull();
         assertThat(capturedHeaders.get().getFirst("x-goog-api-key")).isEqualTo(aqKey);
         assertThat(capturedHeaders.get().getFirst(HttpHeaders.CONTENT_TYPE)).startsWith("application/json");
 
@@ -310,7 +315,7 @@ class ReceiptParseServiceTest {
                 .isEqualTo(Base64.getEncoder().encodeToString(VALID_JPEG_BYTES));
         assertThat(parts.get(1).path("text").asText()).isEqualTo(GeminiClient.RECEIPT_PARSE_PROMPT);
 
-        // 2. 401 Unauthorized -> 500 "서버 설정 오류" (내부 에러 이유 노출 금지)
+        // 2. 401 Unauthorized -> 500 "서버 설정 오류"
         nextStatus.set(401);
         liveMvc.perform(multipart("/api/receipts/parse").file(jpegFile))
                 .andExpect(status().isInternalServerError())
@@ -339,6 +344,208 @@ class ReceiptParseServiceTest {
         liveMvc.perform(multipart("/api/receipts/parse").file(jpegFile))
                 .andExpect(status().isBadGateway())
                 .andExpect(jsonPath("$.message").value("영수증을 읽지 못했어요"));
+    }
+
+    @Test
+    @DisplayName("진단 로그 검증: 단계·상태코드·finishReason·규칙만 기록하고 API 키·이미지·본문·메뉴명·금액·URL은 절대 남기지 않는다")
+    void diagnosticLogging_recordsOnlyAllowedFieldsAndNeverLeaksSensitiveInfo() throws Exception {
+        Logger geminiLogger = (Logger) LoggerFactory.getLogger(GeminiClient.class);
+        Logger serviceLogger = (Logger) LoggerFactory.getLogger(ReceiptParseService.class);
+        ListAppender<ILoggingEvent> appender = new ListAppender<>();
+        appender.start();
+        geminiLogger.addAppender(appender);
+        serviceLogger.addAppender(appender);
+
+        String secretApiKey = "AQ.SECRET_KEY_NEVER_LOG_99999";
+        String secretPlaceName = "비밀단골식당_노출금지";
+        String secretMenuName = "한우특수부위모둠_민감메뉴명";
+        int secretMenuPrice = 98_765_432;
+        String secretModelRawText = "민감한모델원문텍스트_절대로그금지";
+        String imageBase64 = Base64.getEncoder().encodeToString(VALID_JPEG_BYTES);
+
+        AtomicInteger statusHolder = new AtomicInteger(200);
+        AtomicReference<String> bodyHolder = new AtomicReference<>("");
+        AtomicBoolean throwTimeout = new AtomicBoolean(false);
+        AtomicBoolean throwConnectError = new AtomicBoolean(false);
+
+        ClientHttpRequestFactory diagFactory = (uri, httpMethod) -> new ClientHttpRequest() {
+            private final HttpHeaders headers = new HttpHeaders();
+            private final ByteArrayOutputStream bodyStream = new ByteArrayOutputStream();
+
+            @Override
+            public ClientHttpResponse execute() throws IOException {
+                if (throwTimeout.get()) {
+                    throw new SocketTimeoutException("Read timed out from https://generativelanguage.googleapis.com?key=" + secretApiKey);
+                }
+                if (throwConnectError.get()) {
+                    throw new IOException("Connect failed to https://generativelanguage.googleapis.com?key=" + secretApiKey);
+                }
+
+                int status = statusHolder.get();
+                byte[] respBytes = bodyHolder.get().getBytes(StandardCharsets.UTF_8);
+                return new ClientHttpResponse() {
+                    @Override
+                    public HttpStatusCode getStatusCode() {
+                        return HttpStatusCode.valueOf(status);
+                    }
+
+                    @Override
+                    public String getStatusText() {
+                        return HttpStatus.valueOf(status).getReasonPhrase();
+                    }
+
+                    @Override
+                    public void close() {
+                    }
+
+                    @Override
+                    public InputStream getBody() {
+                        return new ByteArrayInputStream(respBytes);
+                    }
+
+                    @Override
+                    public HttpHeaders getHeaders() {
+                        HttpHeaders h = new HttpHeaders();
+                        h.add(HttpHeaders.CONTENT_TYPE, "application/json");
+                        return h;
+                    }
+                };
+            }
+
+            @Override
+            public OutputStream getBody() {
+                return bodyStream;
+            }
+
+            @Override
+            public HttpMethod getMethod() {
+                return httpMethod;
+            }
+
+            @Override
+            public URI getURI() {
+                return uri;
+            }
+
+            @Override
+            public HttpHeaders getHeaders() {
+                return headers;
+            }
+        };
+
+        try {
+            GeminiClient diagClient = new GeminiClient(
+                    false,
+                    "gemini-3.6-flash",
+                    secretApiKey,
+                    "https://generativelanguage.googleapis.com",
+                    diagFactory,
+                    objectMapper
+            );
+            ReceiptParseService diagService = new ReceiptParseService(diagClient, objectMapper);
+            MockMultipartFile jpegFile = new MockMultipartFile(
+                    "image", "receipt.jpg", "image/jpeg", VALID_JPEG_BYTES);
+
+            // 1) 시간 초과
+            throwTimeout.set(true);
+            assertThatThrownBy(() -> diagService.parseReceipt(jpegFile))
+                    .isInstanceOf(ReceiptParseException.class);
+            throwTimeout.set(false);
+
+            // 2) 연결 실패
+            throwConnectError.set(true);
+            assertThatThrownBy(() -> diagService.parseReceipt(jpegFile))
+                    .isInstanceOf(ReceiptParseException.class);
+            throwConnectError.set(false);
+
+            // 3) HTTP 503 오류
+            statusHolder.set(503);
+            bodyHolder.set("{\"error\":\"" + secretModelRawText + "\"}");
+            assertThatThrownBy(() -> diagService.parseReceipt(jpegFile))
+                    .isInstanceOf(ReceiptParseException.class);
+
+            // 4) 응답 구조 불일치 (SAFETY로 인해 content.parts가 비어 있는 경우)
+            statusHolder.set(200);
+            bodyHolder.set("""
+                    {
+                      "candidates": [
+                        {
+                          "content": { "parts": [] },
+                          "finishReason": "SAFETY"
+                        }
+                      ]
+                    }
+                    """);
+            assertThatThrownBy(() -> diagService.parseReceipt(jpegFile))
+                    .isInstanceOf(ReceiptParseException.class);
+
+            // 5) JSON 파싱 실패 (MAX_TOKENS로 인해 모델 텍스트가 잘린 경우)
+            bodyHolder.set("""
+                    {
+                      "candidates": [
+                        {
+                          "content": {
+                            "parts": [
+                              { "text": "{\\"placeName\\":\\"%s\\", \\"broken\\": \\"%s" }
+                            ]
+                          },
+                          "finishReason": "MAX_TOKENS"
+                        }
+                      ]
+                    }
+                    """.formatted(secretPlaceName, secretModelRawText));
+            assertThatThrownBy(() -> diagService.parseReceipt(jpegFile))
+                    .isInstanceOf(ReceiptParseException.class);
+
+            // 6) 출력 검증 실패 (가격 범위 위반: 98,765,432원)
+            bodyHolder.set("""
+                    {
+                      "candidates": [
+                        {
+                          "content": {
+                            "parts": [
+                              {
+                                "text": "{\\"placeName\\":\\"%s\\",\\"items\\":[{\\"name\\":\\"%s\\",\\"qty\\":1,\\"price\\":%d}],\\"receiptTotal\\":%d,\\"adjustmentAmount\\":0}"
+                              }
+                            ]
+                          },
+                          "finishReason": "STOP"
+                        }
+                      ]
+                    }
+                    """.formatted(secretPlaceName, secretMenuName, secretMenuPrice, secretMenuPrice));
+            assertThatThrownBy(() -> diagService.parseReceipt(jpegFile))
+                    .isInstanceOf(ReceiptParseException.class);
+
+            List<String> logMessages = appender.list.stream()
+                    .map(ILoggingEvent::getFormattedMessage)
+                    .toList();
+
+            assertThat(logMessages).contains(
+                    "단계=시간 초과, 상태코드=없음, finishReason=없음",
+                    "단계=연결 실패, 상태코드=없음, finishReason=없음",
+                    "단계=HTTP 오류, 상태코드=503, finishReason=없음",
+                    "단계=응답 구조 불일치, 상태코드=200, finishReason=SAFETY",
+                    "단계=JSON 파싱 실패, 상태코드=200, finishReason=MAX_TOKENS",
+                    "단계=출력 검증 실패, 상태코드=200, finishReason=STOP, 규칙=가격 범위"
+            );
+
+            // 어떤 로그 줄에도 민감 값(API 키, 이미지 base64, URL, 모델 원문, 가게명, 메뉴명, 금액)이 없어야 함
+            for (String line : logMessages) {
+                assertThat(line)
+                        .doesNotContain(secretApiKey)
+                        .doesNotContain(imageBase64)
+                        .doesNotContain("generativelanguage.googleapis.com")
+                        .doesNotContain("/v1beta/models")
+                        .doesNotContain(secretModelRawText)
+                        .doesNotContain(secretPlaceName)
+                        .doesNotContain(secretMenuName)
+                        .doesNotContain(String.valueOf(secretMenuPrice));
+            }
+        } finally {
+            geminiLogger.detachAppender(appender);
+            serviceLogger.detachAppender(appender);
+        }
     }
 
     @Test
