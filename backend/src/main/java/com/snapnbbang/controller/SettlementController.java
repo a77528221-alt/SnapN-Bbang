@@ -1,5 +1,12 @@
 package com.snapnbbang.controller;
 
+import com.snapnbbang.dto.ParticipantClaimRequest;
+import com.snapnbbang.dto.ParticipantClaimResponse;
+import com.snapnbbang.dto.SettlementCreateRequest;
+import com.snapnbbang.dto.SettlementCreateResponse;
+import com.snapnbbang.dto.SettlementPublicResponse;
+import com.snapnbbang.service.SettlementService;
+import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -13,13 +20,16 @@ import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 @RequestMapping("/api/settlements")
+@RequiredArgsConstructor
 public class SettlementController {
 
+    private final SettlementService settlementService;
+
     @PostMapping
-    public ResponseEntity<Void> createSettlement(
-            @RequestBody(required = false) Object request) {
-        // TODO: 정산 생성(링크 생성) 및 총무 토큰 발급 구현
-        return ResponseEntity.status(HttpStatus.NOT_IMPLEMENTED).build();
+    public ResponseEntity<SettlementCreateResponse> createSettlement(
+            @RequestBody(required = false) SettlementCreateRequest request) {
+        SettlementCreateResponse response = settlementService.createSettlement(request);
+        return ResponseEntity.status(HttpStatus.CREATED).body(response);
     }
 
     @DeleteMapping("/{sid}")
@@ -31,18 +41,18 @@ public class SettlementController {
     }
 
     @GetMapping("/{sid}")
-    public ResponseEntity<Void> getSettlement(
+    public ResponseEntity<SettlementPublicResponse> getSettlement(
             @PathVariable("sid") String sid) {
-        // TODO: 정산 열람 (제목, 참여자 이름·점유 여부만 반환, 금액·계좌 미포함) 구현
-        return ResponseEntity.status(HttpStatus.NOT_IMPLEMENTED).build();
+        SettlementPublicResponse response = settlementService.getSettlementPublic(sid);
+        return ResponseEntity.ok(response);
     }
 
     @PostMapping("/{sid}/claim")
-    public ResponseEntity<Void> claimParticipant(
+    public ResponseEntity<ParticipantClaimResponse> claimParticipant(
             @PathVariable("sid") String sid,
-            @RequestBody(required = false) Object request) {
-        // TODO: 이름 점유 및 참여자 토큰 발급 구현
-        return ResponseEntity.status(HttpStatus.NOT_IMPLEMENTED).build();
+            @RequestBody(required = false) ParticipantClaimRequest request) {
+        ParticipantClaimResponse response = settlementService.claimParticipant(sid, request);
+        return ResponseEntity.ok(response);
     }
 
     @GetMapping("/{sid}/me")
@@ -95,4 +105,3 @@ public class SettlementController {
         return ResponseEntity.status(HttpStatus.NOT_IMPLEMENTED).build();
     }
 }
-

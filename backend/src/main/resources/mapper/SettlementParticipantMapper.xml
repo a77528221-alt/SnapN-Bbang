@@ -1,0 +1,113 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.snapnbbang.mapper.SettlementParticipantMapper">
+
+    <insert id="insert" parameterType="com.snapnbbang.domain.SettlementParticipant"
+            useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO settlement_participant (
+            settlement_id,
+            name,
+            is_host,
+            token_hash,
+            claimed_at,
+            pay_status,
+            reported_at,
+            confirmed_at
+        ) VALUES (
+            #{settlementId},
+            #{name},
+            #{isHost},
+            #{tokenHash},
+            #{claimedAt},
+            COALESCE(#{payStatus}, 'UNPAID'),
+            #{reportedAt},
+            #{confirmedAt}
+        )
+    </insert>
+
+    <select id="selectBySettlementId" resultType="com.snapnbbang.domain.SettlementParticipant">
+        SELECT
+            id,
+            settlement_id,
+            name,
+            is_host,
+            token_hash,
+            claimed_at,
+            pay_status,
+            reported_at,
+            confirmed_at
+        FROM settlement_participant
+        WHERE settlement_id = #{settlementId}
+        ORDER BY id ASC
+    </select>
+
+    <select id="selectByIdAndSettlementId" resultType="com.snapnbbang.domain.SettlementParticipant">
+        SELECT
+            id,
+            settlement_id,
+            name,
+            is_host,
+            token_hash,
+            claimed_at,
+            pay_status,
+            reported_at,
+            confirmed_at
+        FROM settlement_participant
+        WHERE id = #{id}
+          AND settlement_id = #{settlementId}
+    </select>
+
+    <update id="claimParticipant">
+        UPDATE settlement_participant
+        SET token_hash = #{tokenHash},
+            claimed_at = NOW()
+        WHERE id = #{id}
+          AND settlement_id = #{settlementId}
+          AND is_host = 0
+          AND token_hash IS NULL
+    </update>
+
+    <update id="releaseClaim">
+        UPDATE settlement_participant
+        SET token_hash = NULL,
+            claimed_at = NULL,
+            pay_status = 'UNPAID',
+            reported_at = NULL,
+            confirmed_at = NULL
+        WHERE id = #{id}
+          AND settlement_id = #{settlementId}
+          AND is_host = 0
+    </update>
+
+    <update id="reportPayment">
+        UPDATE settlement_participant
+        SET pay_status = 'REPORTED',
+            reported_at = NOW()
+        WHERE id = #{id}
+          AND settlement_id = #{settlementId}
+          AND token_hash = #{tokenHash}
+          AND pay_status = 'UNPAID'
+    </update>
+
+    <update id="cancelReportPayment">
+        UPDATE settlement_participant
+        SET pay_status = 'UNPAID',
+            reported_at = NULL
+        WHERE id = #{id}
+          AND settlement_id = #{settlementId}
+          AND token_hash = #{tokenHash}
+          AND pay_status = 'REPORTED'
+    </update>
+
+    <update id="confirmPayment">
+        UPDATE settlement_participant
+        SET pay_status = 'CONFIRMED',
+            confirmed_at = NOW()
+        WHERE id = #{id}
+          AND settlement_id = #{settlementId}
+          AND pay_status = 'REPORTED'
+    </update>
+
+</mapper>

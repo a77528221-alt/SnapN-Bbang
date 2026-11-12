@@ -10,5 +10,6 @@ public interface SettlementMapper {
     int insert(Settlement settlement);
 
     Settlement selectById(@Param("id") String id);
-}
 
+    int deleteById(@Param("id") String id);
+}

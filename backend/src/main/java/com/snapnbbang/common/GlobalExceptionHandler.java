@@ -37,6 +37,16 @@ public class GlobalExceptionHandler {
                 .body(new ErrorResponse(NOT_FOUND_MESSAGE));
     }
 
+    @ExceptionHandler(ConflictException.class)
+    public ResponseEntity<ErrorResponse> handleConflict(ConflictException ex) {
+        String message = (ex.getMessage() != null && !ex.getMessage().isBlank())
+                ? ex.getMessage()
+                : ConflictException.DEFAULT_MESSAGE;
+        return ResponseEntity
+                .status(HttpStatus.CONFLICT)
+                .body(new ErrorResponse(message));
+    }
+
     @ExceptionHandler({
             MethodArgumentNotValidException.class,
             BindException.class,

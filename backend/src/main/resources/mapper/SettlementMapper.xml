@@ -53,5 +53,9 @@
         WHERE id = #{id}
     </select>
 
-</mapper>
+    <delete id="deleteById">
+        DELETE FROM settlement
+        WHERE id = #{id}
+    </delete>
 
+</mapper>

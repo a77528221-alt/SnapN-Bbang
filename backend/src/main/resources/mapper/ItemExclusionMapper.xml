@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.snapnbbang.mapper.ItemExclusionMapper">
+
+    <insert id="insert" parameterType="com.snapnbbang.domain.ItemExclusion">
+        INSERT INTO item_exclusion (
+            item_id,
+            participant_id
+        )
+        SELECT
+            i.id,
+            p.id
+        FROM item i
+        JOIN settle_round r ON r.id = i.round_id
+        JOIN settlement_participant p ON p.settlement_id = r.settlement_id
+        WHERE i.id = #{itemId}
+          AND p.id = #{participantId}
+          AND r.settlement_id = #{settlementId}
+    </insert>
+
+    <select id="selectBySettlementId" resultType="com.snapnbbang.domain.ItemExclusion">
+        SELECT
+            e.item_id,
+            e.participant_id,
+            r.settlement_id
+        FROM item_exclusion e
+        JOIN item i ON i.id = e.item_id
+        JOIN settle_round r ON r.id = i.round_id
+        WHERE r.settlement_id = #{settlementId}
+        ORDER BY e.item_id ASC, e.participant_id ASC
+    </select>
+
+</mapper>

@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.snapnbbang.mapper.ItemMapper">
+
+    <insert id="insert" parameterType="com.snapnbbang.domain.Item"
+            useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO item (
+            round_id,
+            name,
+            qty,
+            price
+        )
+        SELECT
+            r.id,
+            #{name},
+            COALESCE(#{qty}, 1),
+            #{price}
+        FROM settle_round r
+        WHERE r.id = #{roundId}
+          AND r.settlement_id = #{settlementId}
+    </insert>
+
+    <select id="selectBySettlementId" resultType="com.snapnbbang.domain.Item">
+        SELECT
+            i.id,
+            i.round_id,
+            r.settlement_id,
+            i.name,
+            i.qty,
+            i.price
+        FROM item i
+        JOIN settle_round r ON r.id = i.round_id
+        WHERE r.settlement_id = #{settlementId}
+        ORDER BY i.round_id ASC, i.id ASC
+    </select>
+
+</mapper>
