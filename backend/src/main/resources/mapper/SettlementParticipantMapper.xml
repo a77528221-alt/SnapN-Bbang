@@ -87,6 +87,7 @@
             reported_at = NOW()
         WHERE id = #{id}
           AND settlement_id = #{settlementId}
+          AND is_host = 0
           AND token_hash = #{tokenHash}
           AND pay_status = 'UNPAID'
     </update>
@@ -97,6 +98,7 @@
             reported_at = NULL
         WHERE id = #{id}
           AND settlement_id = #{settlementId}
+          AND is_host = 0
           AND token_hash = #{tokenHash}
           AND pay_status = 'REPORTED'
     </update>

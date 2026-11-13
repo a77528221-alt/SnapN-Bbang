@@ -2,6 +2,7 @@ package com.snapnbbang.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -280,6 +281,87 @@ class SettlementApiIntegrationTest {
                 settlementMapper.deleteById(settlementId);
             }
         }
+    }
+
+    @Test
+    @DisplayName("참여자 API: 토큰 없이 /me 불가(404), 남의 토큰 접근 불가(404), /me 응답에 타인 금액 없음, 신고·재신고(409)·취소·확인 후 취소(409)")
+    void participantMeAndReportLifecycle() throws Exception {
+        SettlementCreateResponse created1 = settlementService.createSettlement(sampleCreateRequest());
+        String sid1 = created1.getSettlementId();
+
+        SettlementCreateResponse created2 = settlementService.createSettlement(sampleCreateRequest());
+        String sid2 = created2.getSettlementId();
+        ParticipantSummary otherParticipant = settlementService.getSettlementPublic(sid2).getParticipants().stream()
+                .filter(p -> p.getName().equals("철수"))
+                .findFirst()
+                .orElseThrow();
+        ParticipantClaimResponse otherClaim = settlementService.claimParticipant(
+                sid2, new ParticipantClaimRequest(otherParticipant.getId()));
+
+        // 토큰 없이 /me 접근 -> 404
+        mockMvc.perform(get("/api/settlements/{sid}/me", sid1))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.message").value("찾을 수 없어요"));
+
+        // 다른 정산 토큰으로 /me 접근 -> 404
+        mockMvc.perform(get("/api/settlements/{sid}/me", sid1)
+                        .header("Authorization", "Bearer " + otherClaim.getParticipantToken()))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.message").value("찾을 수 없어요"));
+
+        ParticipantSummary younghee = settlementService.getSettlementPublic(sid1).getParticipants().stream()
+                .filter(p -> p.getName().equals("영희"))
+                .findFirst()
+                .orElseThrow();
+        ParticipantClaimResponse youngheeClaim = settlementService.claimParticipant(
+                sid1, new ParticipantClaimRequest(younghee.getId()));
+        String authHeader = "Bearer " + youngheeClaim.getParticipantToken();
+
+        // /me 조회: 영희 금액(19000)만 포함되고 다른 참여자 금액·이름은 없음
+        MvcResult meResult = mockMvc.perform(get("/api/settlements/{sid}/me", sid1)
+                        .header("Authorization", authHeader))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.name").value("영희"))
+                .andExpect(jsonPath("$.amount").value(19000))
+                .andExpect(jsonPath("$.excludedItems[0]").value("소주"))
+                .andExpect(jsonPath("$.payStatus").value("UNPAID"))
+                .andReturn();
+
+        String rawMe = meResult.getResponse().getContentAsString();
+        assertThat(rawMe)
+                .doesNotContain("22333")
+                .doesNotContain("13333")
+                .doesNotContain("22334")
+                .doesNotContain("철수")
+                .doesNotContain("지민");
+
+        // 송금 신고 (UNPAID -> REPORTED)
+        mockMvc.perform(post("/api/settlements/{sid}/report", sid1)
+                        .header("Authorization", authHeader))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.payStatus").value("REPORTED"));
+
+        // 신고 후 다시 신고 -> 409
+        mockMvc.perform(post("/api/settlements/{sid}/report", sid1)
+                        .header("Authorization", authHeader))
+                .andExpect(status().isConflict());
+
+        // 신고 취소 (REPORTED -> UNPAID)
+        mockMvc.perform(delete("/api/settlements/{sid}/report", sid1)
+                        .header("Authorization", authHeader))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.payStatus").value("UNPAID"));
+
+        // 다시 신고 후 입금 확인(CONFIRMED)된 뒤 취소 -> 409
+        mockMvc.perform(post("/api/settlements/{sid}/report", sid1)
+                        .header("Authorization", authHeader))
+                .andExpect(status().isOk());
+
+        settlementParticipantMapper.confirmPayment(younghee.getId(), sid1);
+
+        mockMvc.perform(delete("/api/settlements/{sid}/report", sid1)
+                        .header("Authorization", authHeader))
+                .andExpect(status().isConflict());
     }
 
     private SettlementCreateRequest sampleCreateRequest() {

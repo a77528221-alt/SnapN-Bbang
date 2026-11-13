@@ -12,6 +12,10 @@ import com.snapnbbang.domain.Settlement;
 import com.snapnbbang.domain.SettlementParticipant;
 import com.snapnbbang.dto.ParticipantClaimRequest;
 import com.snapnbbang.dto.ParticipantClaimResponse;
+import com.snapnbbang.dto.ParticipantShareResponse;
+import com.snapnbbang.dto.ParticipantShareResponse.AccountInfo;
+import com.snapnbbang.dto.ParticipantShareResponse.ShareItem;
+import com.snapnbbang.dto.PaymentStatusResponse;
 import com.snapnbbang.dto.SettlementCreateRequest;
 import com.snapnbbang.dto.SettlementCreateRequest.ItemRequest;
 import com.snapnbbang.dto.SettlementCreateRequest.ParticipantRequest;
@@ -25,6 +29,7 @@ import com.snapnbbang.mapper.RoundAbsenceMapper;
 import com.snapnbbang.mapper.SettleRoundMapper;
 import com.snapnbbang.mapper.SettlementMapper;
 import com.snapnbbang.mapper.SettlementParticipantMapper;
+import com.snapnbbang.service.SettlementCalculator.CalculationResult;
 import com.snapnbbang.service.SettlementCalculator.ItemInput;
 import com.snapnbbang.service.SettlementCalculator.ParticipantInput;
 import com.snapnbbang.service.SettlementCalculator.RoundInput;
@@ -219,6 +224,178 @@ public class SettlementService {
         }
 
         throw new ConflictException("점유할 수 없는 참여자입니다.");
+    }
+
+    @Transactional(readOnly = true)
+    public ParticipantShareResponse getMyShare(String sid, String authorizationHeader) {
+        SettlementParticipant me = verifyParticipantToken(sid, authorizationHeader);
+        Settlement settlement = findActiveSettlementOrThrow(sid);
+
+        List<SettlementParticipant> participants = settlementParticipantMapper.selectBySettlementId(sid);
+        List<SettleRound> rounds = settleRoundMapper.selectBySettlementId(sid);
+        List<RoundAbsence> absences = roundAbsenceMapper.selectBySettlementId(sid);
+        List<Item> items = itemMapper.selectBySettlementId(sid);
+        List<ItemExclusion> exclusions = itemExclusionMapper.selectBySettlementId(sid);
+
+        Map<Long, String> participantNameById = new LinkedHashMap<>();
+        List<ParticipantInput> calcParticipants = new ArrayList<>(participants.size());
+        for (SettlementParticipant p : participants) {
+            participantNameById.put(p.getId(), p.getName());
+            calcParticipants.add(new ParticipantInput(p.getName(), p.isHost()));
+        }
+
+        Map<Long, Set<Long>> absentParticipantIdsByRoundId = new LinkedHashMap<>();
+        for (RoundAbsence absence : absences) {
+            absentParticipantIdsByRoundId
+                    .computeIfAbsent(absence.getRoundId(), k -> new LinkedHashSet<>())
+                    .add(absence.getParticipantId());
+        }
+
+        Map<Long, Set<Long>> excludedParticipantIdsByItemId = new LinkedHashMap<>();
+        for (ItemExclusion exclusion : exclusions) {
+            excludedParticipantIdsByItemId
+                    .computeIfAbsent(exclusion.getItemId(), k -> new LinkedHashSet<>())
+                    .add(exclusion.getParticipantId());
+        }
+
+        Map<Long, List<Item>> itemsByRoundId = new LinkedHashMap<>();
+        for (Item item : items) {
+            itemsByRoundId
+                    .computeIfAbsent(item.getRoundId(), k -> new ArrayList<>())
+                    .add(item);
+        }
+
+        List<RoundInput> calcRounds = new ArrayList<>(rounds.size());
+        List<ShareItem> myShareItems = new ArrayList<>();
+        List<String> myExcludedItems = new ArrayList<>();
+        List<Integer> myAbsentRounds = new ArrayList<>();
+
+        for (SettleRound round : rounds) {
+            Set<Long> absentIds = absentParticipantIdsByRoundId.getOrDefault(
+                    round.getId(), Collections.emptySet());
+            List<String> absentNames = absentIds.stream()
+                    .map(participantNameById::get)
+                    .filter(name -> name != null)
+                    .toList();
+
+            boolean isMeAbsent = absentIds.contains(me.getId());
+            if (isMeAbsent) {
+                myAbsentRounds.add(round.getRoundNumber());
+            }
+
+            List<Item> roundItems = itemsByRoundId.getOrDefault(round.getId(), Collections.emptyList());
+            List<ItemInput> calcItems = new ArrayList<>(roundItems.size());
+
+            for (Item item : roundItems) {
+                Set<Long> excludedIds = excludedParticipantIdsByItemId.getOrDefault(
+                        item.getId(), Collections.emptySet());
+                List<String> excludedNames = excludedIds.stream()
+                        .map(participantNameById::get)
+                        .filter(name -> name != null)
+                        .toList();
+
+                calcItems.add(new ItemInput(item.getName(), item.getPrice(), excludedNames));
+
+                if (!isMeAbsent) {
+                    if (excludedIds.contains(me.getId())) {
+                        myExcludedItems.add(item.getName());
+                    } else {
+                        long eaterCount = participants.stream()
+                                .filter(p -> !absentIds.contains(p.getId()) && !excludedIds.contains(p.getId()))
+                                .count();
+                        // 항목별 share는 화면 표시용 값으로 원 미만을 내림(정수 나눗셈)한다.
+                        // 최종 amount는 SettlementCalculator가 차수 가감액 배분 및 전 차수 합산 후 1회만 내림하여 계산하므로,
+                        // 항목별 share 합계가 최종 amount와 몇 원 다를 수 있다.
+                        long displayShare = eaterCount > 0 ? (item.getPrice() / eaterCount) : 0L;
+                        myShareItems.add(ShareItem.builder()
+                                .roundNumber(round.getRoundNumber())
+                                .placeName(round.getPlaceName())
+                                .name(item.getName())
+                                .share(displayShare)
+                                .build());
+                    }
+                }
+            }
+
+            int adjustment = round.getAdjustmentAmount() == null ? 0 : round.getAdjustmentAmount();
+            calcRounds.add(new RoundInput(
+                    round.getRoundNumber(),
+                    adjustment,
+                    absentNames,
+                    calcItems));
+        }
+
+        CalculationResult calcResult = settlementCalculator.calculate(calcParticipants, calcRounds);
+        long myAmount = calcResult.amounts().getOrDefault(me.getName(), 0L);
+
+        AccountInfo account = null;
+        if (settlement.getBank() != null
+                || settlement.getAccountNumber() != null
+                || settlement.getAccountHolder() != null) {
+            account = AccountInfo.builder()
+                    .bank(settlement.getBank())
+                    .accountNumber(settlement.getAccountNumber())
+                    .accountHolder(settlement.getAccountHolder())
+                    .build();
+        }
+
+        return ParticipantShareResponse.builder()
+                .name(me.getName())
+                .amount(myAmount)
+                .items(myShareItems)
+                .excludedItems(myExcludedItems)
+                .absentRounds(myAbsentRounds)
+                .account(account)
+                .payLink(settlement.getPayLink())
+                .payStatus(me.getPayStatus())
+                .build();
+    }
+
+    @Transactional
+    public PaymentStatusResponse reportPayment(String sid, String authorizationHeader) {
+        SettlementParticipant me = verifyParticipantToken(sid, authorizationHeader);
+        if (me.isHost()) {
+            throw new IllegalArgumentException("총무는 송금 신고를 할 수 없습니다.");
+        }
+
+        int updated = settlementParticipantMapper.reportPayment(me.getId(), sid, me.getTokenHash());
+        if (updated == 1) {
+            return new PaymentStatusResponse("REPORTED");
+        }
+
+        SettlementParticipant current = settlementParticipantMapper.selectByIdAndSettlementId(me.getId(), sid);
+        if (current == null) {
+            throw new NotFoundException();
+        }
+        if (current.isHost()) {
+            throw new IllegalArgumentException("총무는 송금 신고를 할 수 없습니다.");
+        }
+        throw new ConflictException("이미 송금 신고되었거나 입금 확인된 상태예요");
+    }
+
+    @Transactional
+    public PaymentStatusResponse cancelReportPayment(String sid, String authorizationHeader) {
+        SettlementParticipant me = verifyParticipantToken(sid, authorizationHeader);
+        if (me.isHost()) {
+            throw new IllegalArgumentException("총무는 송금 신고 취소를 할 수 없습니다.");
+        }
+
+        int updated = settlementParticipantMapper.cancelReportPayment(me.getId(), sid, me.getTokenHash());
+        if (updated == 1) {
+            return new PaymentStatusResponse("UNPAID");
+        }
+
+        SettlementParticipant current = settlementParticipantMapper.selectByIdAndSettlementId(me.getId(), sid);
+        if (current == null) {
+            throw new NotFoundException();
+        }
+        if (current.isHost()) {
+            throw new IllegalArgumentException("총무는 송금 신고 취소를 할 수 없습니다.");
+        }
+        if ("CONFIRMED".equals(current.getPayStatus())) {
+            throw new ConflictException("이미 입금 확인된 내역은 취소할 수 없어요");
+        }
+        throw new ConflictException("송금 신고 상태가 아니에요");
     }
 
     /**

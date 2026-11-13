@@ -150,22 +150,75 @@ class SettlementServiceTest {
 
             @Override
             public int releaseClaim(Long id, String settlementId) {
-                return 0;
+                SettlementParticipant p = participantStore.get(id);
+                if (p == null || !settlementId.equals(p.getSettlementId())) {
+                    return 0;
+                }
+                synchronized (p) {
+                    if (!p.isHost()) {
+                        p.setTokenHash(null);
+                        p.setClaimedAt(null);
+                        p.setPayStatus("UNPAID");
+                        p.setReportedAt(null);
+                        p.setConfirmedAt(null);
+                        return 1;
+                    }
+                    return 0;
+                }
             }
 
             @Override
             public int reportPayment(Long id, String settlementId, String tokenHash) {
-                return 0;
+                SettlementParticipant p = participantStore.get(id);
+                if (p == null || !settlementId.equals(p.getSettlementId())) {
+                    return 0;
+                }
+                synchronized (p) {
+                    if (!p.isHost()
+                            && tokenHash != null
+                            && tokenHash.equals(p.getTokenHash())
+                            && "UNPAID".equals(p.getPayStatus())) {
+                        p.setPayStatus("REPORTED");
+                        p.setReportedAt(LocalDateTime.now());
+                        return 1;
+                    }
+                    return 0;
+                }
             }
 
             @Override
             public int cancelReportPayment(Long id, String settlementId, String tokenHash) {
-                return 0;
+                SettlementParticipant p = participantStore.get(id);
+                if (p == null || !settlementId.equals(p.getSettlementId())) {
+                    return 0;
+                }
+                synchronized (p) {
+                    if (!p.isHost()
+                            && tokenHash != null
+                            && tokenHash.equals(p.getTokenHash())
+                            && "REPORTED".equals(p.getPayStatus())) {
+                        p.setPayStatus("UNPAID");
+                        p.setReportedAt(null);
+                        return 1;
+                    }
+                    return 0;
+                }
             }
 
             @Override
             public int confirmPayment(Long id, String settlementId) {
-                return 0;
+                SettlementParticipant p = participantStore.get(id);
+                if (p == null || !settlementId.equals(p.getSettlementId())) {
+                    return 0;
+                }
+                synchronized (p) {
+                    if ("REPORTED".equals(p.getPayStatus())) {
+                        p.setPayStatus("CONFIRMED");
+                        p.setConfirmedAt(LocalDateTime.now());
+                        return 1;
+                    }
+                    return 0;
+                }
             }
         };
 
@@ -454,6 +507,158 @@ class SettlementServiceTest {
                     .as(fileName + " must include settlement id condition")
                     .containsAnyOf("#{id}", "#{settlementId}");
         }
+    }
+
+    @Test
+    @DisplayName("7. 토큰 없이 /me 접근 불가(404), 남의(다른 정산) 토큰으로 접근 불가(404)")
+    void getMyShareWithoutTokenOrWithOtherTokenReturns404() throws Exception {
+        SettlementCreateResponse created1 = settlementService.createSettlement(sampleCreateRequest());
+        String sid1 = created1.getSettlementId();
+
+        SettlementCreateResponse created2 = settlementService.createSettlement(sampleCreateRequest());
+        String sid2 = created2.getSettlementId();
+        ParticipantSummary otherParticipant = settlementService.getSettlementPublic(sid2).getParticipants().stream()
+                .filter(p -> !p.isHost() && p.getName().equals("철수"))
+                .findFirst()
+                .orElseThrow();
+        ParticipantClaimResponse otherClaim = settlementService.claimParticipant(
+                sid2, new ParticipantClaimRequest(otherParticipant.getId()));
+
+        // 토큰 없이 /me 접근 -> 404
+        mockMvc.perform(get("/api/settlements/{sid}/me", sid1))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.message").value("찾을 수 없어요"));
+
+        // 다른 정산의 참여자 토큰으로 sid1의 /me 접근 -> 404
+        mockMvc.perform(get("/api/settlements/{sid}/me", sid1)
+                        .header("Authorization", "Bearer " + otherClaim.getParticipantToken()))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.message").value("찾을 수 없어요"));
+
+        // 총무 토큰으로 /me 접근 -> 참여자 토큰이 아니므로 404
+        mockMvc.perform(get("/api/settlements/{sid}/me", sid1)
+                        .header("Authorization", "Bearer " + created1.getAdminToken()))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.message").value("찾을 수 없어요"));
+    }
+
+    @Test
+    @DisplayName("8. /me 응답에는 본인 내역만 포함되고 다른 참여자의 이름·금액이 없으며, 계좌가 NULL이면 account는 null이다")
+    void getMyShareContainsOnlyMyDataAndHandlesNullAccount() throws Exception {
+        SettlementCreateResponse created = settlementService.createSettlement(sampleCreateRequest());
+        String sid = created.getSettlementId();
+
+        SettlementPublicResponse publicView = settlementService.getSettlementPublic(sid);
+        ParticipantSummary younghee = publicView.getParticipants().stream()
+                .filter(p -> p.getName().equals("영희"))
+                .findFirst()
+                .orElseThrow();
+        ParticipantSummary jimin = publicView.getParticipants().stream()
+                .filter(p -> p.getName().equals("지민"))
+                .findFirst()
+                .orElseThrow();
+
+        ParticipantClaimResponse youngheeClaim = settlementService.claimParticipant(
+                sid, new ParticipantClaimRequest(younghee.getId()));
+        ParticipantClaimResponse jiminClaim = settlementService.claimParticipant(
+                sid, new ParticipantClaimRequest(jimin.getId()));
+
+        // 영희 조회: 1차 소주 제외(excludedItems: ["소주"]), 2차 참석, 총 부담액 19000원
+        MvcResult youngheeResult = mockMvc.perform(get("/api/settlements/{sid}/me", sid)
+                        .header("Authorization", "Bearer " + youngheeClaim.getParticipantToken()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.name").value("영희"))
+                .andExpect(jsonPath("$.amount").value(19000))
+                .andExpect(jsonPath("$.items.length()").value(3))
+                .andExpect(jsonPath("$.excludedItems.length()").value(1))
+                .andExpect(jsonPath("$.excludedItems[0]").value("소주"))
+                .andExpect(jsonPath("$.absentRounds.length()").value(0))
+                .andExpect(jsonPath("$.account.bank").value("카카오뱅크"))
+                .andExpect(jsonPath("$.account.accountNumber").value("3333-01-2345678"))
+                .andExpect(jsonPath("$.account.accountHolder").value("김민수"))
+                .andExpect(jsonPath("$.payStatus").value("UNPAID"))
+                .andReturn();
+
+        String rawYoungheeJson = youngheeResult.getResponse().getContentAsString(StandardCharsets.UTF_8);
+        // 다른 참여자(철수 22333, 지민 13333, 민수 22334)의 금액이나 이름이 노출되지 않아야 함
+        assertThat(rawYoungheeJson)
+                .doesNotContain("22333")
+                .doesNotContain("13333")
+                .doesNotContain("22334")
+                .doesNotContain("철수")
+                .doesNotContain("지민");
+
+        // 계좌 정보가 삭제(NULL)된 경우 account가 null로 내려오는지 확인
+        Settlement savedSettlement = settlementStore.get(sid);
+        savedSettlement.setBank(null);
+        savedSettlement.setAccountNumber(null);
+        savedSettlement.setAccountHolder(null);
+
+        // 지민 조회: 2차 불참(absentRounds: [2]), 총 부담액 13333원, account는 null
+        mockMvc.perform(get("/api/settlements/{sid}/me", sid)
+                        .header("Authorization", "Bearer " + jiminClaim.getParticipantToken()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.name").value("지민"))
+                .andExpect(jsonPath("$.amount").value(13333))
+                .andExpect(jsonPath("$.absentRounds.length()").value(1))
+                .andExpect(jsonPath("$.absentRounds[0]").value(2))
+                .andExpect(jsonPath("$.account").value(org.hamcrest.Matchers.nullValue()));
+    }
+
+    @Test
+    @DisplayName("9. 송금 신고(UNPAID->REPORTED), 중복 신고 409, 신고 취소(REPORTED->UNPAID), 입금 확인(CONFIRMED) 후 취소 409")
+    void reportAndCancelReportLifecycle() throws Exception {
+        SettlementCreateResponse created = settlementService.createSettlement(sampleCreateRequest());
+        String sid = created.getSettlementId();
+
+        ParticipantSummary chulsoo = settlementService.getSettlementPublic(sid).getParticipants().stream()
+                .filter(p -> p.getName().equals("철수"))
+                .findFirst()
+                .orElseThrow();
+        ParticipantClaimResponse claim = settlementService.claimParticipant(
+                sid, new ParticipantClaimRequest(chulsoo.getId()));
+        String authHeader = "Bearer " + claim.getParticipantToken();
+
+        // 1) 첫 송금 신고 성공 (UNPAID -> REPORTED)
+        mockMvc.perform(post("/api/settlements/{sid}/report", sid)
+                        .header("Authorization", authHeader))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.payStatus").value("REPORTED"));
+
+        assertThat(participantStore.get(chulsoo.getId()).getPayStatus()).isEqualTo("REPORTED");
+        assertThat(participantStore.get(chulsoo.getId()).getReportedAt()).isNotNull();
+
+        // 2) 이미 REPORTED 상태에서 다시 신고하면 409
+        mockMvc.perform(post("/api/settlements/{sid}/report", sid)
+                        .header("Authorization", authHeader))
+                .andExpect(status().isConflict());
+
+        // 3) 신고 취소 성공 (REPORTED -> UNPAID, reported_at NULL)
+        mockMvc.perform( org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+                        .delete("/api/settlements/{sid}/report", sid)
+                        .header("Authorization", authHeader))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.payStatus").value("UNPAID"));
+
+        assertThat(participantStore.get(chulsoo.getId()).getPayStatus()).isEqualTo("UNPAID");
+        assertThat(participantStore.get(chulsoo.getId()).getReportedAt()).isNull();
+
+        // 4) 다시 신고 후 총무 입금 확인(CONFIRMED)된 뒤에는 취소 시 409, 재신고 시 409
+        mockMvc.perform(post("/api/settlements/{sid}/report", sid)
+                        .header("Authorization", authHeader))
+                .andExpect(status().isOk());
+
+        participantStore.get(chulsoo.getId()).setPayStatus("CONFIRMED");
+        participantStore.get(chulsoo.getId()).setConfirmedAt(LocalDateTime.now());
+
+        mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+                        .delete("/api/settlements/{sid}/report", sid)
+                        .header("Authorization", authHeader))
+                .andExpect(status().isConflict());
+
+        mockMvc.perform(post("/api/settlements/{sid}/report", sid)
+                        .header("Authorization", authHeader))
+                .andExpect(status().isConflict());
     }
 
     private SettlementCreateRequest sampleCreateRequest() {

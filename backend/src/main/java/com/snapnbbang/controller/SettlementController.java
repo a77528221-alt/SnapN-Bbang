@@ -2,6 +2,8 @@ package com.snapnbbang.controller;
 
 import com.snapnbbang.dto.ParticipantClaimRequest;
 import com.snapnbbang.dto.ParticipantClaimResponse;
+import com.snapnbbang.dto.ParticipantShareResponse;
+import com.snapnbbang.dto.PaymentStatusResponse;
 import com.snapnbbang.dto.SettlementCreateRequest;
 import com.snapnbbang.dto.SettlementCreateResponse;
 import com.snapnbbang.dto.SettlementPublicResponse;
@@ -56,27 +58,27 @@ public class SettlementController {
     }
 
     @GetMapping("/{sid}/me")
-    public ResponseEntity<Void> getMyShare(
+    public ResponseEntity<ParticipantShareResponse> getMyShare(
             @PathVariable("sid") String sid,
             @RequestHeader(value = "Authorization", required = false) String authorization) {
-        // TODO: 참여자 토큰 검증 후 내 금액, 메뉴 내역, 입금 계좌 조회 구현
-        return ResponseEntity.status(HttpStatus.NOT_IMPLEMENTED).build();
+        ParticipantShareResponse response = settlementService.getMyShare(sid, authorization);
+        return ResponseEntity.ok(response);
     }
 
     @PostMapping("/{sid}/report")
-    public ResponseEntity<Void> reportPayment(
+    public ResponseEntity<PaymentStatusResponse> reportPayment(
             @PathVariable("sid") String sid,
             @RequestHeader(value = "Authorization", required = false) String authorization) {
-        // TODO: 참여자 토큰 검증 후 송금 신고(UNPAID -> REPORTED) 구현
-        return ResponseEntity.status(HttpStatus.NOT_IMPLEMENTED).build();
+        PaymentStatusResponse response = settlementService.reportPayment(sid, authorization);
+        return ResponseEntity.ok(response);
     }
 
     @DeleteMapping("/{sid}/report")
-    public ResponseEntity<Void> cancelReportPayment(
+    public ResponseEntity<PaymentStatusResponse> cancelReportPayment(
             @PathVariable("sid") String sid,
             @RequestHeader(value = "Authorization", required = false) String authorization) {
-        // TODO: 참여자 토큰 검증 후 송금 신고 취소(REPORTED -> UNPAID) 구현
-        return ResponseEntity.status(HttpStatus.NOT_IMPLEMENTED).build();
+        PaymentStatusResponse response = settlementService.cancelReportPayment(sid, authorization);
+        return ResponseEntity.ok(response);
     }
 
     @GetMapping("/{sid}/status")
